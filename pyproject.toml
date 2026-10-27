@@ -21,6 +21,10 @@ dependencies = [
     "rich>=13.0.0",
     "tqdm>=4.65.0",
     "click>=8.1.0",
+    "scipy>=1.10.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.0.0",
+    "google-auth-httplib2>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -33,3 +37,6 @@ autoclip = "autoclip.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["autoclip*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

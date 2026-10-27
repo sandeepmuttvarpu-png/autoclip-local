@@ -37,19 +37,24 @@ autoclip-local/
 │   ├── config.py               # Hardware detection and config defaults
 │   ├── audio/
 │   │   └── transcriber.py      # faster-whisper with word-level alignment
+│   ├── publisher/
+│   │   └── youtube_scheduler.py# Resumable scheduled YouTube Shorts publisher
 │   ├── intelligence/
 │   │   ├── prompt.py           # Few-shot viral hook scoring prompts
-│   │   └── segmenter.py        # Local LLM chat completion & JSON parser
+│   │   ├── segmenter.py        # Local LLM chat completion & JSON parser
+│   │   └── audio_spike_detector.py # RMS energy Z-score hype moment detector
 │   ├── vision/
 │   │   ├── face_tracker.py     # MediaPipe & OpenCV face tracking
 │   │   ├── reframer.py         # EMA 9:16 vertical crop solver
+│   │   ├── gaming_stacked_crop.py # Top 35% webcam + Bottom 65% gameplay stacked cropper
 │   │   └── models/             # Bundled offline face detection models
 │   ├── subtitle/
 │   │   └── ass_builder.py      # Kinetic word-by-word ASS pop karaoke
 │   └── render/
 │       └── ffmpeg_pipe.py      # Hardware NVENC FFmpeg pipeline with tqdm
 └── tests/
-    └── test_smoke.py           # End-to-end synthetic video & NVENC verification
+    ├── test_smoke.py           # End-to-end synthetic video & NVENC verification
+    └── test_addons.py          # YouTube scheduler, gaming crop & audio spike tests
 ```
 
 ---
@@ -88,6 +93,20 @@ autoclip run input_podcast.mp4 \
   --top-k 5
 
 # Dry-run: inspect transcription and virality candidate scores without rendering
+autoclip scan input_podcast.mp4 --json
+
+# Gaming stacked 9:16 layout (Facecam Top 35% + Gameplay Bottom 65%)
+autoclip gaming gameplay.mp4 --start 120.0 --end 165.0
+
+# Detect screaming, hype plays, and team cheering moments via audio RMS energy spikes
+autoclip detect-hype gameplay.mp4 --threshold-std 2.5 --min-duration 3.0
+
+# Schedule automatic upload to YouTube Shorts
+autoclip publish output_shorts/clip_01.mp4 \
+  --title "Why 8GB VRAM is Enough for 120B Models" \
+  --publish-at "2026-10-28T18:00:00Z" \
+  --tags "AI,Hardware,Shorts"
+```
 autoclip scan input_podcast.mp4 --json
 ```
 

@@ -333,5 +333,119 @@ def run_cmd(
         )
 
 
+@main.command("gaming")
+@click.argument("input_video", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--start", default=0.0, type=float, help="Start time in seconds")
+@click.option("--end", default=30.0, type=float, help="End time in seconds")
+@click.option("--out-dir", default="./output_shorts", type=click.Path(file_okay=False, path_type=Path), help="Output directory")
+@click.option("--no-nvenc", is_flag=True, help="Disable NVENC hardware encoding")
+def gaming_cmd(input_video, start, end, out_dir, no_nvenc):
+    """Render a stacked gaming vertical short (Facecam Top 35% + Gameplay Bottom 65%)."""
+    from autoclip.vision.gaming_stacked_crop import StackedGamingCropper
+
+    cfg = AutoClipConfig()
+    cfg.detect_environment()
+    if no_nvenc:
+        cfg.hardware.has_nvenc = False
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_clip = out_dir / f"{input_video.stem}_gaming_stacked_{start:.0f}s_{end:.0f}s.mp4"
+
+    console.print(f"[bold magenta]🎮 Gaming Stacked Layout:[/bold magenta] {input_video.name}")
+    console.print(f"Top 35% (1080x672) Facecam + Bottom 65% (1080x1248) Central Gameplay")
+
+    cropper = StackedGamingCropper(face_detector_type=cfg.face_detector_type)
+    cropper.render_stacked_clip(
+        input_video=input_video,
+        start_time=start,
+        end_time=end,
+        output_video=out_clip,
+        use_nvenc=cfg.hardware.has_nvenc,
+    )
+    console.print(f"✓ Saved stacked gaming short: [bold green]{out_clip.resolve()}[/bold green]")
+
+
+@main.command("detect-hype")
+@click.argument("input_video", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--threshold-std", default=2.5, type=float, help="Z-score standard deviation threshold (default: 2.5)")
+@click.option("--min-duration", default=3.0, type=float, help="Minimum consecutive spike duration in seconds (default: 3.0)")
+@click.option("--json", "output_json", is_flag=True, help="Output JSON results")
+def detect_hype_cmd(input_video, threshold_std, min_duration, output_json):
+    """Detect loud hype, screaming, and team cheering moments via audio RMS energy spikes."""
+    from autoclip.intelligence.audio_spike_detector import AudioSpikeDetector
+
+    detector = AudioSpikeDetector(
+        threshold_std=threshold_std,
+        min_consecutive_sec=min_duration,
+    )
+
+    with console.status("[bold green]Analyzing audio stream RMS decibels and rolling baseline...", spinner="dots"):
+        moments = detector.detect_spikes(input_video)
+
+    if output_json:
+        click.echo(json.dumps([m.to_dict() for m in moments], indent=2))
+        return
+
+    table = Table(title=f"Acoustic Hype & Excitement Spikes in {input_video.name}", border_style="bright_yellow")
+    table.add_column("Rank", justify="center", style="bold yellow")
+    table.add_column("Time Window", justify="center", style="cyan")
+    table.add_column("Duration", justify="center")
+    table.add_column("Peak Time", justify="center", style="magenta")
+    table.add_column("Peak Energy Z-Score", justify="center", style="bold green")
+    table.add_column("Peak Decibels", justify="center", style="bold red")
+
+    for idx, m in enumerate(moments, 1):
+        m_s, s_s = divmod(m.start_time, 60)
+        m_e, s_e = divmod(m.end_time, 60)
+        table.add_row(
+            f"#{idx}",
+            f"{int(m_s):02d}:{s_s:04.1f} - {int(m_e):02d}:{s_e:04.1f}",
+            f"{m.duration:.1f}s",
+            f"{m.peak_time:.1f}s",
+            f"+{m.peak_intensity:.2f} σ",
+            f"{m.peak_db:.1f} dB",
+        )
+
+    console.print(table)
+    if not moments:
+        console.print("[dim]No acoustic spikes exceeded +2.5 standard deviations for >= 3.0 seconds.[/dim]")
+
+
+@main.command("publish")
+@click.argument("video_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--title", required=True, help="Title of the YouTube Short")
+@click.option("--publish-at", required=True, help="ISO 8601 UTC timestamp (e.g. 2026-10-28T18:00:00Z)")
+@click.option("--desc", default="Auto-generated viral short via AutoClip-Local #Shorts", help="Description")
+@click.option("--tags", default="Shorts,AutoClip,AI", help="Comma-separated tags")
+def publish_cmd(video_path, title, publish_at, desc, tags):
+    """Upload and schedule a video short to YouTube."""
+    from autoclip.publisher.youtube_scheduler import YouTubePublisher
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+    publisher = YouTubePublisher()
+
+    console.print(f"[bold cyan]Uploading and Scheduling YouTube Short:[/bold cyan] {video_path.name}")
+    res = publisher.upload_scheduled_short(
+        video_path=video_path,
+        title=title,
+        description=desc,
+        publish_at=publish_at,
+        tags=tag_list,
+    )
+
+    console.print(
+        Panel(
+            f"[bold green]Video Successfully Scheduled![/bold green]\n"
+            f"• Title       : [bold]{res.title}[/bold]\n"
+            f"• Video URL   : [cyan]{res.url}[/cyan]\n"
+            f"• Publish At  : [yellow]{res.publish_at}[/yellow]\n"
+            f"• Status      : [dim]{res.privacy_status}[/dim]",
+            title="🚀 YouTube Scheduled",
+            border_style="green",
+        )
+    )
+
+
 if __name__ == "__main__":
     main()
