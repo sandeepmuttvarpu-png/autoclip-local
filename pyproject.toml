@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autoclip-local"
+version = "0.1.0"
+description = "Local-First GPU-Accelerated Video Clipping & Viral Shorts Repurposing Engine"
+readme = "README.md"
+authors = [
+    { name = "Sandeep Muttvarpu", email = "sandeepmuttvarpu@gmail.com" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "faster-whisper>=1.0.0",
+    "openai>=1.20.0",
+    "pydantic>=2.0.0",
+    "numpy>=1.24.0",
+    "opencv-python-headless>=4.8.0",
+    "rich>=13.0.0",
+    "tqdm>=4.65.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+mediapipe = ["mediapipe>=0.10.0"]
+dev = ["pytest>=7.0.0"]
+
+[project.scripts]
+autoclip = "autoclip.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["autoclip*"]

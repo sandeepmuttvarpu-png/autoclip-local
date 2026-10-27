@@ -1,0 +1,21 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Outputs and temp media
+output_shorts/
+*.tmp*
+/tmp/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
