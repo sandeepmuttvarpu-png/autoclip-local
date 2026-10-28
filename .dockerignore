@@ -1,0 +1,17 @@
+.venv
+venv
+ENV
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.git
+.github
+*.egg-info
+dist
+build
+output_shorts
+raw_streams
+library
+demo_podcast.mp4
