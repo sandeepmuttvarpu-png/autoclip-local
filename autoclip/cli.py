@@ -447,5 +447,88 @@ def publish_cmd(video_path, title, publish_at, desc, tags):
     )
 
 
+@main.command("studio")
+@click.option("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
+@click.option("--port", default=8501, type=int, help="Port to bind (default: 8501)")
+@click.option("--reload", is_flag=True, help="Enable auto-reload for development")
+def studio_cmd(host, port, reload):
+    """Launch the interactive AutoClip-Local Web Studio Dashboard."""
+    import uvicorn
+    console.print(
+        Panel(
+            f"[bold magenta]AutoClip-Local Studio Dashboard[/bold magenta]\n"
+            f"• Web UI URL: [bold cyan]http://{host}:{port}[/bold cyan]\n"
+            f"• Library   : [dim]library/unpublished & library/published[/dim]\n"
+            f"• Mode      : 100% Local GPU-Accelerated Video Repurposing",
+            title="🎬 Studio Server",
+            border_style="magenta",
+        )
+    )
+    uvicorn.run("autoclip.web.app:app", host=host, port=port, reload=reload)
+
+
+@main.command("slice")
+@click.argument("source", type=str)
+@click.option("--duration", default=120.0, type=float, help="Segment duration in seconds (default: 120s)")
+@click.option("--max-clips", default=None, type=int, help="Max clips to extract (default: all)")
+@click.option("--output-dir", default="library/unpublished", help="Target output library folder")
+def slice_cmd(source, duration, max_clips, output_dir):
+    """Slice a 1-to-5 hour stream (URL or local path) into 2-minute 9:16 vertical shorts."""
+    from autoclip.stream.slicer import StreamSlicer
+
+    slicer = StreamSlicer(nvenc_enabled=True)
+    if source.startswith("http://") or source.startswith("https://"):
+        console.print(f"[bold cyan]Downloading live stream via yt-dlp:[/bold cyan] {source}")
+        video_file = slicer.download_stream(source, Path("raw_streams"))
+    else:
+        video_file = Path(source).resolve()
+
+    console.print(f"[bold green]Slicing '{video_file.name}' into 9:16 vertical shorts ({duration:.0f}s each)...[/bold green]")
+    clips = slicer.slice_stream_to_shorts(
+        video_path=video_file,
+        segment_duration=duration,
+        library_dir=Path(output_dir),
+        max_clips=max_clips,
+    )
+    console.print(f"✓ Generated [bold green]{len(clips)}[/bold green] vertical shorts in: [cyan]{output_dir}/{clips[0].stream_name}[/cyan]")
+
+
+@main.command("fuse-story")
+@click.argument("clip_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--category", default="aita", help="Story category (aita, revenge, drama)")
+@click.option("--voice", default="en-US-ChristopherNeural", help="Edge-TTS neural voice")
+@click.option("--headline", default=None, help="Custom opening hook card headline")
+@click.option("--story", default=None, help="Custom story text (or leave empty for AI generation)")
+@click.option("--out", default=None, help="Output short video path")
+def fuse_story_cmd(clip_path, category, voice, headline, story, out):
+    """Fuse a viral drama story, neural voiceover, and kinetic subtitles onto a clip."""
+    from autoclip.story.generator import StoryGenerator, StoryRequest
+    from autoclip.story.narrator import StoryNarrator
+
+    story_gen = StoryGenerator()
+    narrator = StoryNarrator(nvenc_enabled=True)
+
+    if not story:
+        console.print(f"[bold green]Generating viral {category.upper()} story via local LLM...[/bold green]")
+        gen_res = story_gen.generate_story(StoryRequest(category=category))
+        story = gen_res.story_text
+        headline = headline or gen_res.headline
+    else:
+        headline = headline or "TRUE STORY CONFESSION"
+
+    out_path = Path(out) if out else clip_path.parent / f"{clip_path.stem}_story.mp4"
+    console.print(f"[bold cyan]Headline:[/bold cyan] {headline}")
+    console.print(f"[bold cyan]Rendering with voice:[/bold cyan] {voice}")
+
+    res = narrator.fuse_story_and_render(
+        background_video_path=clip_path,
+        story_text=story,
+        headline=headline,
+        output_video_path=out_path,
+        voice_id=voice,
+    )
+    console.print(f"✓ Final short rendered: [bold green]{res.final_video_path}[/bold green] ({res.duration:.1f}s)")
+
+
 if __name__ == "__main__":
     main()
