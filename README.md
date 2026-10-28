@@ -11,123 +11,147 @@
 
 ---
 
-## ⚡ The Physical Problem & Why We Built This
+## ⚡ Core Capabilities & Studio Workflow
 
-Services like Opus Clip and Submagic charge monthly subscriptions, upload your private raw footage to third-party cloud datacenters, and take several minutes per video. Meanwhile, local consumer workstations with modern NVIDIA GPUs (e.g. RTX 40/50 series) sit idle with dedicated hardware **NVENC** silicon capable of encoding 4K video at 300+ frames per second.
+### 1. Continuous 1–5 Hour Stream Slicing (`StreamSlicer`)
+- Ingest massive 1-to-5 hour live streams directly from Twitch / YouTube (via `yt-dlp`) or local MP4/MKV recordings.
+- Chunks continuous footage into back-to-back **2-minute 9:16 vertical shorts** (1080x1920) using hardware NVENC.
+- Organizes clips into dedicated stream folders under the **Unpublished Vault** (`library/unpublished/<stream_name>/`).
 
-**AutoClip-Local** runs 100% on your local machine with zero external API calls:
-1. **Audio Transcription:** Uses `faster-whisper` (`large-v3` / `medium.en`) on CUDA to extract word-level timestamps with sub-millisecond precision.
-2. **Semantic Virality & Hook Scoring:** Feeds windowed transcripts into your local LLM (running via **Sandwich.cpp** or `llama-server` at `http://127.0.0.1:8080/v1`) using few-shot structured JSON schemas to identify high-retention 30–60 second narrative hooks.
-3. **Vision Active Speaker Tracking & EMA 9:16 Reframing:** Samples video frames, detects facial focal coordinates with MediaPipe / OpenCV, and applies an Exponential Moving Average (EMA) filter:
-   $$C_{\text{smooth}}(t) = \alpha C_t + (1 - \alpha) C_{\text{smooth}}(t - 1), \quad \alpha \approx 0.15$$
-   Dynamically reframing landscape 16:9 into centered 9:16 vertical shorts without jitter.
-4. **Kinetic Word-Level Pop Subtitles:** Generates styled `.ass` (Advanced SubStation Alpha) subtitle tracks with word-level karaoke pop scaling (`\fscx115\fscy115`) and vibrant yellow highlights (`\c&H0000FFFF&`).
-5. **Hardware NVENC Rendering:** Burns crops and kinetic subtitles in a single-pass hardware-accelerated FFmpeg pipeline utilizing `h264_nvenc`, rendering 60-second 1080x1920 shorts in under 3 seconds.
+### 2. Story & Neural Voiceover Fusion Studio (`StoryNarrator`)
+- Recreates the high-retention viral style of [HarryTalks YouTube Shorts](https://youtube.com/shorts/H3spw3wzw24):
+  - **Drama & AITA Narratives:** Automatically generates gripping 250–350 word first-person stories via local LLM (Sandwich.cpp / llama-server) or curated templates.
+  - **Neural Voice Synthesis:** High-fidelity voiceover via Edge-TTS (`Christopher`, `Guy`, `Aria`, `Jenny`, `Eric`, `Ryan`) with zero cloud API keys or fees.
+  - **Audio Ducking:** Automatically ducks background game audio to **10–15%** volume while boosting the narrative voiceover to **100%**.
+  - **Kinetic Karaoke Subtitles:** Generates animated `.ass` subtitles with word-by-word scaling pops (`\fscx115\fscy115`) and bright yellow highlights (`\c&H0000FFFF&`).
+  - **Opening Hook Card:** Renders a 3.5-second top banner card with the viral headline to immediately capture viewer retention.
+
+### 3. Multi-Channel YouTube Scheduler & Smart Stagger (`AccountManager`)
+- **Supports $\ge 3$ Independent Channels:** Manage separate OAuth credentials and channel switcher configurations.
+- **Strict Duplicate Prevention:** When a short is scheduled, it is automatically migrated from `library/unpublished/<stream>/` to `library/published/<stream>/` with an auditable publication receipt.
+- **1-Click Smart Stagger:** Distributes 100+ clips across your connected channels over a 7-day period during peak viewer hours (12:00, 17:00, 21:00 UTC).
+
+### 4. Interactive Web Studio Dashboard
+- Modern dark-mode responsive dashboard (FastAPI + Tailwind CSS + Lucide Icons).
+- Byte-range HTTP 206 streaming for smooth video scrubbing.
+- Live system telemetry (NVIDIA RTX 5050 Mobile NVENC, Whisper CUDA, Edge-TTS Neural).
 
 ---
 
-## 📦 Architecture & Repository Layout
+## 📦 Repository Layout
 
 ```text
 autoclip-local/
+├── Dockerfile                  # CUDA 12.2 + FFmpeg NVENC container definition
+├── docker-compose.yml          # One-click GPU passthrough deployment
 ├── pyproject.toml              # Build definition and CLI packaging
 ├── requirements.txt            # Core dependencies
+├── library/
+│   ├── unpublished/            # Vault of sliced clips awaiting story & schedule
+│   └── published/              # Archived clips scheduled/published to YouTube
+├── raw_streams/                # Storage for ingested 1-5 hr stream VODs
 ├── autoclip/
-│   ├── cli.py                  # CLI entrypoint (autoclip run / scan)
+│   ├── cli.py                  # CLI commands (studio, slice, fuse-story, publish)
 │   ├── config.py               # Hardware detection and config defaults
+│   ├── stream/
+│   │   └── slicer.py           # 1-to-5 hour stream download & 2-min vertical slicer
+│   ├── story/
+│   │   ├── generator.py        # Local LLM viral story generation & curated fallbacks
+│   │   └── narrator.py         # TTS synthesis, audio ducking, and ASS fusion
+│   ├── publisher/
+│   │   ├── account_manager.py  # Multi-channel manager & Smart Stagger scheduler
+│   │   └── youtube_scheduler.py# Resumable scheduled YouTube upload client
+│   ├── web/
+│   │   ├── app.py              # FastAPI backend API
+│   │   └── templates/
+│   │       └── index.html      # Complete interactive Studio UI
 │   ├── audio/
 │   │   └── transcriber.py      # faster-whisper with word-level alignment
-│   ├── publisher/
-│   │   └── youtube_scheduler.py# Resumable scheduled YouTube Shorts publisher
 │   ├── intelligence/
 │   │   ├── prompt.py           # Few-shot viral hook scoring prompts
-│   │   ├── segmenter.py        # Local LLM chat completion & JSON parser
+│   │   ├── segmenter.py        # Local LLM virality ranking & JSON parser
 │   │   └── audio_spike_detector.py # RMS energy Z-score hype moment detector
 │   ├── vision/
 │   │   ├── face_tracker.py     # MediaPipe & OpenCV face tracking
 │   │   ├── reframer.py         # EMA 9:16 vertical crop solver
-│   │   ├── gaming_stacked_crop.py # Top 35% webcam + Bottom 65% gameplay stacked cropper
-│   │   └── models/             # Bundled offline face detection models
-│   ├── subtitle/
-│   │   └── ass_builder.py      # Kinetic word-by-word ASS pop karaoke
-│   └── render/
-│       └── ffmpeg_pipe.py      # Hardware NVENC FFmpeg pipeline with tqdm
+│   │   └── gaming_stacked_crop.py # Top 35% webcam + Bottom 65% gameplay stacked cropper
 └── tests/
-    ├── test_smoke.py           # End-to-end synthetic video & NVENC verification
-    └── test_addons.py          # YouTube scheduler, gaming crop & audio spike tests
+    ├── test_smoke.py           # Reframing, subtitles, and NVENC render tests
+    ├── test_addons.py          # Publisher, stacked cropper, and hype detector tests
+    └── test_studio.py          # Studio slicing, story fusion, scheduler, and API tests
 ```
 
 ---
 
-## 🚀 Quickstart
+## 🚀 Quickstart Guide
 
-### 1. Installation
+### Option A: Local Python Workstation
 
 ```bash
-cd ~/dev/autoclip-local
-
-# Create environment (Python 3.10 - 3.12 recommended)
-uv venv .venv --python 3.11
+# 1. Clone & create virtual environment
+git clone https://github.com/your-username/autoclip-local.git
+cd autoclip-local
+python3 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies and CLI
-uv pip install -e .
-```
+# 2. Install package in editable mode
+pip install -e .
 
-### 2. Verify Hardware Acceleration
+# 3. Launch the Studio Dashboard
+autoclip studio --port 8501
+```
+Open your browser at **`http://localhost:8501`**.
+
+---
+
+### Option B: Docker with NVIDIA GPU Passthrough
 
 ```bash
-autoclip --help
+# Build and launch with docker-compose
+docker compose up -d
+
+# View container logs
+docker compose logs -f autoclip-studio
 ```
+The studio dashboard is accessible at **`http://localhost:8501`**.
 
-### 3. Extract Viral Shorts from Long-Form Video
+---
 
+## 🛠️ CLI Workflows
+
+### 1. Slice a 1–5 hr Stream into 2-Minute Shorts
 ```bash
-# Run full pipeline: extracts top 3 viral hooks and renders 1080x1920 MP4s with burned subtitles
-autoclip run input_podcast.mp4 --out-dir ./output_shorts --top-k 3
+# Download and slice Twitch or YouTube VOD
+autoclip slice "https://www.youtube.com/watch?v=..." --duration 120
 
-# With custom local model endpoint (e.g. Sandwich.cpp) and strict virality score threshold
-autoclip run input_podcast.mp4 \
-  --llm-url http://127.0.0.1:8080/v1 \
-  --min-score 85 \
-  --top-k 5
-
-# Dry-run: inspect transcription and virality candidate scores without rendering
-autoclip scan input_podcast.mp4 --json
-
-# Gaming stacked 9:16 layout (Facecam Top 35% + Gameplay Bottom 65%)
-autoclip gaming gameplay.mp4 --start 120.0 --end 165.0
-
-# Detect screaming, hype plays, and team cheering moments via audio RMS energy spikes
-autoclip detect-hype gameplay.mp4 --threshold-std 2.5 --min-duration 3.0
-
-# Schedule automatic upload to YouTube Shorts
-autoclip publish output_shorts/clip_01.mp4 \
-  --title "Why 8GB VRAM is Enough for 120B Models" \
-  --publish-at "2026-10-28T18:00:00Z" \
-  --tags "AI,Hardware,Shorts"
+# Slice a local stream recording
+autoclip slice "/path/to/stream.mp4" --duration 120 --output-dir library/unpublished
 ```
-autoclip scan input_podcast.mp4 --json
+
+### 2. Fuse Story, Voiceover, & Subtitles
+```bash
+autoclip fuse-story library/unpublished/my_stream/my_stream_clip_001.mp4 \
+  --category aita \
+  --voice en-US-ChristopherNeural
+```
+
+### 3. Schedule YouTube Short
+```bash
+autoclip publish library/unpublished/my_stream/my_stream_clip_001.mp4 \
+  --title "AITA For Exposing My Fiancée's Secret Account? #Shorts" \
+  --publish-at "2026-10-29T18:00:00Z"
 ```
 
 ---
 
 ## 🧪 Testing & Verification
 
-Run the end-to-end smoke test suite:
-
+Run the full automated test suite (18 unit, integration, and studio tests):
 ```bash
-pytest -v tests/test_smoke.py
+pytest -v
 ```
-
-All 4 test phases execute in ~3 seconds:
-- `test_reframer_aspect_ratio`: Verifies 9:16 vertical crop math and boundary clamping.
-- `test_kinetic_ass_builder`: Verifies word-level ASS pop karaoke tags and relative time offsets.
-- `test_segmenter_json_parsing`: Verifies robust JSON schema extraction with markdown fallbacks.
-- `test_end_to_end_nvenc_render`: Generates a synthetic 16:9 test video, tracks focal points, generates subtitles, and renders an output MP4 at **1080x1920 (9:16)** via `h264_nvenc`.
 
 ---
 
 ## 📄 License
-
-MIT License. Designed and built by [Sandeep Muttvarpu](https://github.com/sandeepmuttvarpu-png).
+MIT License. Free and open source for creators and developers.
