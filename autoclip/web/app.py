@@ -134,7 +134,7 @@ class RegisterAccountRequest(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     """Render main Studio dashboard."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 
 @app.get("/api/status")
