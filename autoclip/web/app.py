@@ -1,29 +1,32 @@
 """
-AutoClip-Local Studio FastAPI Application.
-Complete local-first dashboard for stream slicing, story generation,
-neural voiceover fusion, audio ducking, and multi-account YouTube scheduling.
+AutoClip-Local Web Studio Dashboard API.
+Provides asynchronous background job execution, Method C batch story fusion,
+Editing Loadouts, multi-channel YouTube scheduling, and HTTP 206 video streaming.
 """
 
-from datetime import datetime, timezone
+import asyncio
+from dataclasses import asdict
 import json
 import logging
-import os
 from pathlib import Path
 import shutil
 import time
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from autoclip.config import AutoClipConfig, default_config
+from autoclip.core.job_queue import job_queue
 from autoclip.stream.slicer import StreamSlicer
-from autoclip.story.generator import StoryGenerator, StoryRequest
+from autoclip.story.loadouts import LoadoutManager, DEFAULT_LOADOUTS
 from autoclip.story.narrator import StoryNarrator, VOICE_PRESETS
+from autoclip.story.batch_assigner import StoryVault, BatchStoryAssigner
+from autoclip.story.generator import StoryGenerator, StoryRequest
 from autoclip.publisher.account_manager import AccountManager
 
 logger = logging.getLogger(__name__)
@@ -35,17 +38,19 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 LIBRARY_UNPUBLISHED = BASE_DIR / "library" / "unpublished"
 LIBRARY_PUBLISHED = BASE_DIR / "library" / "published"
 RAW_STREAMS_DIR = BASE_DIR / "raw_streams"
+STORIES_DIR = BASE_DIR / "stories"
 
 LIBRARY_UNPUBLISHED.mkdir(parents=True, exist_ok=True)
 LIBRARY_PUBLISHED.mkdir(parents=True, exist_ok=True)
 RAW_STREAMS_DIR.mkdir(parents=True, exist_ok=True)
+STORIES_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
-    title="AutoClip-Local Studio",
-    description="Local-First GPU-Accelerated Video Repurposing & Multi-Account YouTube Scheduler",
-    version="1.0.0",
+    title="AutoClip-Local Web Studio",
+    description="High-Throughput Local Video Clipping, Story Fusion, and Multi-Channel Shorts Scheduler",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -57,39 +62,36 @@ app.add_middleware(
 )
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-# Shared singletons
+# Core Singleton Services
 slicer = StreamSlicer(nvenc_enabled=True)
-story_gen = StoryGenerator()
 narrator = StoryNarrator(nvenc_enabled=True)
+loadout_mgr = LoadoutManager()
+story_vault = StoryVault(STORIES_DIR)
+batch_assigner = BatchStoryAssigner(narrator=narrator, loadout_mgr=loadout_mgr)
+story_gen = StoryGenerator()
 account_mgr = AccountManager(
+    config_dir=BASE_DIR / "library",
     library_unpublished=LIBRARY_UNPUBLISHED,
     library_published=LIBRARY_PUBLISHED,
 )
 
-# Background job tracker
-jobs_lock = {}
 
-
-# Pydantic Schemas
-class VoiceSampleRequest(BaseModel):
-    voice_id: str = "en-US-ChristopherNeural"
-    sample_text: str = "This is a preview of the neural voiceover for your viral short."
-
+# ==================== PYDANTIC SCHEMAS ====================
 
 class SliceStreamRequest(BaseModel):
-    source_type: str = "url"  # "url" or "local_file"
+    source_type: str = "url"  # "url" or "file"
     url: Optional[str] = None
     local_path: Optional[str] = None
-    segment_duration: float = 120.0  # 2 minutes default
+    segment_duration: float = 120.0
     max_clips: Optional[int] = None
 
 
-class GenerateStoryRequest(BaseModel):
-    category: str = "aita"  # "aita", "revenge", "drama", "custom"
-    custom_prompt: Optional[str] = None
-    target_duration_sec: float = 120.0
+class BatchFuseRequest(BaseModel):
+    clip_ids: List[str]
+    stream_name: str
+    loadout_id: str = "loadout_1"
+    story_files: Optional[List[str]] = None  # If omitted, auto-pairs from stories/
 
 
 class RenderStoryRequest(BaseModel):
@@ -97,20 +99,19 @@ class RenderStoryRequest(BaseModel):
     clip_id: str
     story_text: str
     headline: str
-    voice_id: str = "en-US-ChristopherNeural"
+    loadout_id: Optional[str] = "loadout_1"
+    voice_id: Optional[str] = None
     bg_audio_volume: float = 0.12
     voice_volume: float = 1.0
-    alignment: int = 5  # 5 = Screen Center (Middle)
-    margin_v: int = 0
 
 
 class SingleScheduleRequest(BaseModel):
     stream_name: str
     clip_id: str
     account_id: str
-    publish_at: str
-    title: Optional[str] = None
-    description: Optional[str] = None
+    publish_at: str  # ISO 8601 string
+    title: str
+    description: Optional[str] = ""
     tags: Optional[List[str]] = None
 
 
@@ -119,178 +120,406 @@ class StaggerScheduleRequest(BaseModel):
     account_ids: List[str]
     start_date: Optional[str] = None
     days: int = 7
+    slots_per_day: Optional[List[str]] = None
 
 
 class RegisterAccountRequest(BaseModel):
     account_id: str
     account_name: str
     client_secret_json: Optional[str] = None
-    token_json: Optional[str] = None
 
 
-# Helpers
-def _get_stream_info(folder_path: Path, status: str) -> dict:
-    stream_name = folder_path.name
-    meta_path = folder_path / "stream_meta.json"
-    meta = {}
-    if meta_path.exists():
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-        except Exception:
-            pass
+# ==================== ROUTES ====================
 
-    clips = []
-    for c_file in sorted(folder_path.glob("*_clip_*.mp4")):
-        clip_id = c_file.stem
-        c_meta_file = folder_path / f"{clip_id}.json"
-        c_meta = {
-            "clip_id": clip_id,
-            "stream_name": stream_name,
-            "file_path": str(c_file),
-            "status": status,
-            "story_attached": False,
-            "story_headline": None,
-            "duration": 120.0,
-            "created_at": c_file.stat().st_mtime,
-        }
-        if c_meta_file.exists():
-            try:
-                with open(c_meta_file, "r", encoding="utf-8") as mf:
-                    loaded = json.load(mf)
-                    c_meta.update(loaded)
-            except Exception:
-                pass
-        clips.append(c_meta)
-
-    return {
-        "stream_name": stream_name,
-        "status": status,
-        "clip_count": len(clips),
-        "total_duration_sec": meta.get("total_duration_sec", len(clips) * 120.0),
-        "created_at": meta.get("created_at", folder_path.stat().st_mtime),
-        "clips": clips,
-    }
-
-
-# Routes
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    """Render the main Studio Dashboard."""
-    return templates.TemplateResponse(request=request, name="index.html")
+    """Render main Studio dashboard."""
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.get("/api/status")
 def get_system_status():
-    """System health check, GPU status, and library counters."""
-    unpub_count = len(list(LIBRARY_UNPUBLISHED.glob("*/*_clip_*.mp4")))
-    pub_count = len(list(LIBRARY_PUBLISHED.glob("*/*_clip_*.mp4")))
-    unpub_streams = len([d for d in LIBRARY_UNPUBLISHED.iterdir() if d.is_dir()])
-    pub_streams = len([d for d in LIBRARY_PUBLISHED.iterdir() if d.is_dir()])
-    accounts = account_mgr.list_accounts()
-
-    cuda_avail = False
-    device_name = "CPU Only"
+    """Live telemetry HUD for GPU, memory, vault counts, and job queue."""
     try:
         import torch
         cuda_avail = torch.cuda.is_available()
+        gpu_name = torch.cuda.get_device_name(0) if cuda_avail else "CPU Mode"
+        vram_free = "N/A"
         if cuda_avail:
-            device_name = torch.cuda.get_device_name(0)
-    except ImportError:
-        nv_smi = shutil.which("nvidia-smi")
-        if nv_smi:
             try:
-                res = subprocess.run(
-                    [nv_smi, "--query-gpu=name", "--format=csv,noheader"],
-                    stdout=subprocess.PIPE,
-                    text=True,
-                    timeout=2,
-                )
-                if res.returncode == 0 and res.stdout.strip():
-                    cuda_avail = True
-                    device_name = res.stdout.strip().splitlines()[0]
+                free, total = torch.cuda.mem_get_info()
+                vram_free = f"{free / (1024**2):.0f} / {total / (1024**2):.0f} MB"
             except Exception:
                 pass
+    except (ImportError, Exception):
+        cuda_avail = False
+        gpu_name = "CPU Mode"
+        vram_free = "N/A"
 
-    auth_accounts = [a for a in accounts if a.is_authenticated]
+    unpub_count = len(list(LIBRARY_UNPUBLISHED.glob("*/*.mp4")))
+    pub_count = len(list(LIBRARY_PUBLISHED.glob("*/*.mp4")))
+    unpub_streams = len([d for d in LIBRARY_UNPUBLISHED.iterdir() if d.is_dir()])
+    pub_streams = len([d for d in LIBRARY_PUBLISHED.iterdir() if d.is_dir()])
+    accounts = account_mgr.list_accounts()
+    stories = story_vault.list_stories()
+
     return {
         "status": "online",
         "cuda_available": cuda_avail,
-        "gpu_name": device_name,
+        "gpu_name": gpu_name,
+        "vram_free": vram_free,
         "nvenc_enabled": slicer.nvenc_enabled,
         "unpublished_clips_count": unpub_count,
         "published_clips_count": pub_count,
         "unpublished_streams_count": unpub_streams,
         "published_streams_count": pub_streams,
-        "accounts_count": len(auth_accounts),
-        "total_account_slots": len(accounts),
+        "accounts_count": len(accounts),
+        "stories_count": len(stories),
     }
 
 
-@app.get("/api/streams")
-def list_all_streams():
-    """List all stream folders and clips in Unpublished and Published sections."""
-    unpublished = []
-    for d in sorted(LIBRARY_UNPUBLISHED.iterdir()):
-        if d.is_dir() and not d.name.startswith("."):
-            info = _get_stream_info(d, "unpublished")
-            if info["clip_count"] > 0:
-                unpublished.append(info)
+# ==================== JOB QUEUE & SSE ====================
 
-    published = []
-    for d in sorted(LIBRARY_PUBLISHED.iterdir()):
-        if d.is_dir() and not d.name.startswith("."):
-            info = _get_stream_info(d, "published")
-            if info["clip_count"] > 0:
-                published.append(info)
+@app.get("/api/jobs")
+def list_jobs_endpoint():
+    return job_queue.list_jobs()
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job_endpoint(job_id: str):
+    job = job_queue.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job.to_dict()
+
+
+@app.get("/api/jobs/{job_id}/stream")
+async def stream_job_progress(job_id: str):
+    """Server-Sent Events (SSE) progress broadcaster for live UI updates."""
+    job = job_queue.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    async def event_generator():
+        q = asyncio.Queue()
+        job_queue.register_subscriber(job_id, q)
+        try:
+            # Yield current state first
+            yield f"data: {json.dumps(job.to_dict())}\n\n"
+            while True:
+                try:
+                    data = await asyncio.wait_for(q.get(), timeout=25.0)
+                    yield f"data: {json.dumps(data)}\n\n"
+                    if data.get("status") in ("completed", "failed"):
+                        break
+                except asyncio.TimeoutError:
+                    # Keep-alive heartbeat
+                    yield ": ping\n\n"
+        finally:
+            job_queue.remove_subscriber(job_id, q)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+# ==================== STREAMS & SLICING ====================
+
+@app.get("/api/streams")
+def list_streams():
+    """List all streams and their grouped clips partitioned by Unpublished / Published."""
+    def parse_section(root: Path, status_label: str):
+        streams = []
+        if not root.exists():
+            return streams
+        for folder in sorted(root.iterdir()):
+            if not folder.is_dir():
+                continue
+            mp4s = sorted(folder.glob("*.mp4"))
+            clips = []
+            for mp4 in mp4s:
+                if mp4.name.endswith("_raw.mp4") or mp4.name.endswith("_story.mp4"):
+                    continue
+                meta_file = folder / f"{mp4.stem}.json"
+                if meta_file.exists():
+                    try:
+                        with open(meta_file, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            data["status"] = status_label
+                            clips.append(data)
+                    except Exception:
+                        pass
+                else:
+                    clips.append({
+                        "clip_id": mp4.stem,
+                        "stream_name": folder.name,
+                        "file_path": str(mp4),
+                        "status": status_label,
+                        "story_attached": False,
+                    })
+
+            if clips:
+                total_dur = sum(c.get("duration", 120.0) for c in clips)
+                streams.append({
+                    "stream_name": folder.name,
+                    "clip_count": len(clips),
+                    "total_duration_sec": total_dur,
+                    "clips": clips,
+                })
+        return streams
 
     return {
-        "unpublished": unpublished,
-        "published": published,
+        "unpublished": parse_section(LIBRARY_UNPUBLISHED, "unpublished"),
+        "published": parse_section(LIBRARY_PUBLISHED, "published"),
     }
 
 
 @app.post("/api/streams/slice")
-def slice_stream_endpoint(req: SliceStreamRequest, background_tasks: BackgroundTasks):
-    """Download and slice stream into 2-minute 9:16 shorts."""
-    if req.source_type == "url":
-        if not req.url:
-            raise HTTPException(status_code=400, detail="Missing stream URL")
+def slice_stream_endpoint(req: SliceStreamRequest):
+    """
+    Launch asynchronous stream slicing. Returns job_id immediately within 50ms.
+    """
+    is_url = (req.source_type == "url")
+    source = req.url if is_url else req.local_path
+    if not source:
+        raise HTTPException(status_code=400, detail="Missing URL or local file path")
+
+    job_title = f"Slice Stream: {source[:40]}..."
+    job = job_queue.create_job(
+        job_type="slice_stream",
+        title=job_title,
+        details={"source": source, "is_url": is_url, "duration": req.segment_duration},
+    )
+
+    def worker():
         try:
-            downloaded = slicer.download_stream(req.url, RAW_STREAMS_DIR)
-            source_file = downloaded
+            slicer.slice_stream_to_shorts(
+                source=source,
+                is_url=is_url,
+                segment_duration=req.segment_duration,
+                library_dir=LIBRARY_UNPUBLISHED,
+                max_clips=req.max_clips,
+                job_id=job.job_id,
+            )
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Download failed: {e}")
+            logger.error(f"Slicing worker failed: {e}")
+            job_queue.mark_failed(job.job_id, str(e))
+
+    job_queue.run_in_background(worker)
+    return {"status": "accepted", "job_id": job.job_id, "title": job_title}
+
+
+# ==================== METHOD C: STORIES & LOADOUTS ====================
+
+@app.get("/api/stories")
+def list_stories_endpoint():
+    """List all text stories stored in stories/."""
+    docs = story_vault.list_stories()
+    return [d.to_dict() for d in docs]
+
+
+@app.get("/api/loadouts")
+def list_loadouts_endpoint():
+    """List all available Editing Loadouts."""
+    return loadout_mgr.list_loadouts()
+
+
+@app.post("/api/stories/batch-fuse")
+def batch_fuse_endpoint(req: BatchFuseRequest):
+    """
+    Method C: Batch fuse stories from stories/ onto selected clips using chosen Loadout.
+    Executes asynchronously via JobQueue.
+    """
+    unpub_dir = LIBRARY_UNPUBLISHED / req.stream_name
+    if not unpub_dir.exists():
+        raise HTTPException(status_code=404, detail="Stream folder not found")
+
+    clip_paths = [unpub_dir / f"{c_id}.mp4" for c_id in req.clip_ids]
+    valid_clips = [p for p in clip_paths if p.exists()]
+    if not valid_clips:
+        raise HTTPException(status_code=400, detail="No matching clip video files found")
+
+    # Get story documents
+    if req.story_files:
+        stories = [story_vault.get_story(sf) for sf in req.story_files]
+        stories = [s for s in stories if s is not None]
     else:
-        if not req.local_path:
-            raise HTTPException(status_code=400, detail="Missing local file path")
-        source_file = Path(req.local_path)
-        if not source_file.exists():
-            raise HTTPException(status_code=404, detail=f"File not found: {source_file}")
+        stories = story_vault.list_stories()
+
+    if not stories:
+        raise HTTPException(status_code=400, detail="No stories found in stories/ folder")
+
+    loadout = loadout_mgr.get_loadout(req.loadout_id)
+    job_title = f"Batch Fuse {min(len(valid_clips), len(stories))} Clips via {loadout.name}"
+    job = job_queue.create_job(
+        job_type="batch_fuse_stories",
+        title=job_title,
+        details={
+            "stream_name": req.stream_name,
+            "clips_count": len(valid_clips),
+            "stories_count": len(stories),
+            "loadout": loadout.name,
+        },
+    )
+
+    def worker():
+        try:
+            batch_assigner.batch_fuse(
+                clip_paths=valid_clips,
+                story_docs=stories,
+                loadout=loadout,
+                job_id=job.job_id,
+            )
+        except Exception as e:
+            logger.error(f"Batch fusion failed: {e}")
+            job_queue.mark_failed(job.job_id, str(e))
+
+    job_queue.run_in_background(worker)
+    return {"status": "accepted", "job_id": job.job_id, "title": job_title}
+
+
+@app.get("/api/story/voices")
+def get_story_voices():
+    """List available Edge-TTS neural voice presets."""
+    return [asdict(v) if hasattr(v, "__dataclass_fields__") else v for v in VOICE_PRESETS.values()]
+
+
+@app.post("/api/story/generate")
+def generate_story_endpoint(req: StoryRequest):
+    """Generate a high-retention story using local LLM or curated fallback."""
+    try:
+        story = story_gen.generate_story(req)
+        return story.to_dict()
+    except Exception as e:
+        logger.error(f"Story generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/story/render")
+def render_single_story_endpoint(req: RenderStoryRequest):
+    """Single clip story fusion (Method A/B)."""
+    unpub_stream = LIBRARY_UNPUBLISHED / req.stream_name
+    clip_file = unpub_stream / f"{req.clip_id}.mp4"
+    if not clip_file.exists():
+        raise HTTPException(status_code=404, detail="Clip file not found")
+
+    loadout = loadout_mgr.get_loadout(req.loadout_id or "loadout_1")
+    voice_to_use = req.voice_id or loadout.voice_id
+    margin_v, alignment = loadout.get_margin_v_and_alignment()
+
+    output_file = unpub_stream / f"{req.clip_id}_story.mp4"
+    backup_file = unpub_stream / f"{req.clip_id}_raw.mp4"
+    if not backup_file.exists():
+        shutil.copy(str(clip_file), str(backup_file))
 
     try:
-        clips = slicer.slice_stream_to_shorts(
-            video_path=source_file,
-            segment_duration=req.segment_duration,
-            library_dir=LIBRARY_UNPUBLISHED,
-            max_clips=req.max_clips,
+        res = narrator.fuse_story_and_render(
+            background_video_path=clip_file,
+            story_text=req.story_text,
+            headline=req.headline,
+            output_video_path=output_file,
+            voice_id=voice_to_use,
+            bg_audio_volume=req.bg_audio_volume,
+            voice_volume=req.voice_volume,
+            alignment=alignment,
+            margin_v=margin_v,
         )
-        return {
-            "status": "success",
-            "stream_name": clips[0].stream_name if clips else source_file.stem,
-            "clips_count": len(clips),
-            "clips": [c.to_dict() for c in clips],
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Slicing failed: {e}")
+        shutil.move(str(output_file), str(clip_file))
 
+        # Update metadata JSON
+        meta_json = unpub_stream / f"{req.clip_id}.json"
+        if meta_json.exists():
+            with open(meta_json, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            data["story_attached"] = True
+            data["story_headline"] = req.headline
+            data["voice_id"] = voice_to_use
+            data["duration"] = res.duration
+            with open(meta_json, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+
+        return {"status": "success", "duration": res.duration, "headline": req.headline}
+    except Exception as e:
+        logger.error(f"Render failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Render failed: {e}")
+
+
+# ==================== MULTI-CHANNEL SCHEDULER ====================
+
+@app.get("/api/accounts")
+def list_accounts_endpoint():
+    return [a.to_dict() for a in account_mgr.list_accounts()]
+
+
+@app.post("/api/accounts/register")
+def register_account_endpoint(req: RegisterAccountRequest):
+    acc = account_mgr.register_account(
+        account_id=req.account_id,
+        account_name=req.account_name,
+        client_secret_json=req.client_secret_json,
+    )
+    return acc.to_dict()
+
+
+@app.delete("/api/accounts/{account_id}")
+def delete_account_endpoint(account_id: str):
+    removed = account_mgr.delete_account(account_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return {"status": "success", "account_id": account_id}
+
+
+@app.post("/api/schedule/single")
+def schedule_single_endpoint(req: SingleScheduleRequest):
+    """
+    Schedule a single short to a specific YouTube account.
+    Automatically moves the clip from Unpublished to Published vault!
+    """
+    clip_file = LIBRARY_UNPUBLISHED / req.stream_name / f"{req.clip_id}.mp4"
+    if not clip_file.exists():
+        raise HTTPException(status_code=404, detail="Unpublished clip not found")
+
+    receipt = account_mgr.schedule_video_for_account(
+        account_id=req.account_id,
+        video_path=clip_file,
+        title=req.title,
+        description=req.description or "",
+        publish_at=req.publish_at,
+        tags=req.tags,
+    )
+    return receipt.to_dict()
+
+
+@app.post("/api/schedule/stagger")
+def schedule_stagger_endpoint(req: StaggerScheduleRequest):
+    """
+    1-Click Smart Stagger: Distributes all clips across connected accounts over 7 days.
+    """
+    unpub_folder = LIBRARY_UNPUBLISHED / req.stream_name
+    if not unpub_folder.exists():
+        raise HTTPException(status_code=404, detail="Stream folder not found")
+
+    clips = sorted([p for p in unpub_folder.glob("*.mp4") if not p.name.endswith("_raw.mp4")])
+    if not clips:
+        raise HTTPException(status_code=400, detail="No unpublished clips in this stream")
+
+    receipts = account_mgr.stagger_schedule_clips(
+        stream_name=req.stream_name,
+        clips=clips,
+        account_ids=req.account_ids,
+        days=req.days,
+        slots_per_day=req.slots_per_day,
+    )
+    return {
+        "status": "success",
+        "total_scheduled": len(receipts),
+        "receipts": [r.to_dict() for r in receipts],
+    }
+
+
+# ==================== VIDEO STREAMING (HTTP 206) ====================
 
 @app.get("/api/clips/{section}/{stream_name}/{clip_id}/video")
 def stream_clip_video(section: str, stream_name: str, clip_id: str, request: Request):
-    """
-    Stream clip video with HTTP 206 Partial Content range support
-    for smooth scrubbing in browser HTML5 player.
-    """
+    """HTTP 206 Partial Content video streaming for smooth scrubbing in HTML5 player."""
     target_dir = LIBRARY_PUBLISHED if section == "published" else LIBRARY_UNPUBLISHED
     clip_path = target_dir / stream_name / f"{clip_id}.mp4"
     if not clip_path.exists():
@@ -300,304 +529,66 @@ def stream_clip_video(section: str, stream_name: str, clip_id: str, request: Req
     range_header = request.headers.get("range")
 
     if not range_header:
-        return FileResponse(
-            str(clip_path),
+        return StreamingResponse(
+            open(clip_path, "rb"),
             media_type="video/mp4",
-            headers={"Accept-Ranges": "bytes"},
+            headers={"Content-Length": str(file_size)},
         )
 
-    # Parse Range: bytes=start-end
+    # Parse byte range (e.g. 'bytes=1024-')
     try:
-        range_str = range_header.replace("bytes=", "").strip()
-        parts = range_str.split("-")
-        start = int(parts[0]) if parts[0] else 0
-        end = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
-        start = max(0, min(start, file_size - 1))
-        end = max(start, min(end, file_size - 1))
-        chunk_size = (end - start) + 1
+        byte_range = range_header.replace("bytes=", "").split("-")
+        start = int(byte_range[0])
+        end = int(byte_range[1]) if byte_range[1] else file_size - 1
+        length = end - start + 1
+    except Exception:
+        raise HTTPException(status_code=416, detail="Requested Range Not Satisfiable")
 
-        def iterfile():
-            with open(clip_path, "rb") as f:
-                f.seek(start)
-                remaining = chunk_size
-                while remaining > 0:
-                    read_len = min(64 * 1024, remaining)
-                    data = f.read(read_len)
-                    if not data:
-                        break
-                    remaining -= len(data)
-                    yield data
+    def file_chunk_generator(file_p, start_b, len_b, chunk_s=1024 * 1024):
+        with open(file_p, "rb") as f:
+            f.seek(start_b)
+            remaining = len_b
+            while remaining > 0:
+                read_bytes = min(remaining, chunk_s)
+                data = f.read(read_bytes)
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
 
-        headers = {
-            "Content-Range": f"bytes {start}-{end}/{file_size}",
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(chunk_size),
-            "Content-Type": "video/mp4",
-        }
-        return StreamingResponse(iterfile(), status_code=206, headers=headers)
-    except Exception as e:
-        logger.warning(f"Error handling range request: {e}")
-        return FileResponse(str(clip_path), media_type="video/mp4")
-
-
-@app.get("/api/story/voices")
-def get_voices():
-    """Return available Edge-TTS neural voices."""
-    return list(VOICE_PRESETS.values())
-
-
-@app.post("/api/story/sample-voice")
-def sample_voice_endpoint(req: VoiceSampleRequest):
-    """Synthesize a quick 3-second audio preview of a chosen voice."""
-    sample_path = Path("/tmp") / f"voice_sample_{int(time.time())}.mp3"
-    try:
-        narrator.synthesize_voice(
-            text=req.sample_text,
-            voice_id=req.voice_id,
-            output_path=sample_path,
-        )
-        return FileResponse(str(sample_path), media_type="audio/mpeg")
-    except Exception as e:
-        logger.error(f"Voice sampling failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Voice preview failed: {e}")
-
-
-@app.post("/api/streams/load-demo")
-def load_demo_endpoint():
-    """Load or generate demo stream clips into Unpublished Vault for immediate testing."""
-    demo_src = BASE_DIR / "demo_podcast.mp4"
-    if not demo_src.exists():
-        raise HTTPException(status_code=404, detail="demo_podcast.mp4 not found on host.")
-
-    try:
-        clips = slicer.slice_stream_to_shorts(
-            video_path=demo_src,
-            segment_duration=12.0,
-            library_dir=LIBRARY_UNPUBLISHED,
-        )
-        return {"status": "success", "clips_count": len(clips)}
-    except Exception as e:
-        logger.error(f"Load demo failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to load demo clips: {e}")
-
-
-@app.post("/api/story/generate")
-def generate_story_endpoint(req: GenerateStoryRequest):
-    """Generate viral story script and headline via local LLM or fallback."""
-    story_req = StoryRequest(
-        category=req.category,
-        custom_prompt=req.custom_prompt,
-        target_duration_sec=req.target_duration_sec,
+    headers = {
+        "Content-Range": f"bytes {start}-{end}/{file_size}",
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(length),
+        "Content-Type": "video/mp4",
+    }
+    return StreamingResponse(
+        file_chunk_generator(clip_path, start, length),
+        status_code=206,
+        headers=headers,
     )
-    result = story_gen.generate_story(story_req)
-    return result.to_dict()
-
-
-@app.post("/api/story/render")
-def render_story_endpoint(req: RenderStoryRequest):
-    """
-    Fuse story voiceover, kinetic pop subtitles, and ducked audio onto 9:16 background.
-    """
-    unpub_stream = LIBRARY_UNPUBLISHED / req.stream_name
-    clip_file = unpub_stream / f"{req.clip_id}.mp4"
-    if not clip_file.exists():
-        raise HTTPException(status_code=404, detail=f"Unpublished clip file not found: {clip_file}")
-
-    # Output to rendered file
-    output_file = unpub_stream / f"{req.clip_id}_story.mp4"
-
-    try:
-        render_res = narrator.fuse_story_and_render(
-            background_video_path=clip_file,
-            story_text=req.story_text,
-            headline=req.headline,
-            output_video_path=output_file,
-            voice_id=req.voice_id,
-            bg_audio_volume=req.bg_audio_volume,
-            voice_volume=req.voice_volume,
-            alignment=req.alignment,
-            margin_v=req.margin_v,
-        )
-
-        # Replace original raw cut with story-fused version so it's ready for publishing!
-        backup_file = unpub_stream / f"{req.clip_id}_raw.mp4"
-        if not backup_file.exists():
-            shutil.copy(str(clip_file), str(backup_file))
-        shutil.move(str(output_file), str(clip_file))
-
-        return {
-            "status": "success",
-            "clip_id": req.clip_id,
-            "stream_name": req.stream_name,
-            "headline": render_res.headline,
-            "duration": render_res.duration,
-            "voice_id": render_res.voice_id,
-            "video_path": str(clip_file),
-        }
-    except Exception as e:
-        logger.error(f"Render failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Render failed: {e}")
-
-
-@app.get("/api/accounts")
-def get_accounts():
-    """List all registered YouTube channels."""
-    accounts = account_mgr.list_accounts()
-    return [a.to_dict() for a in accounts]
-
-
-@app.post("/api/accounts/register")
-def register_account_endpoint(req: RegisterAccountRequest):
-    """Add or update a YouTube channel account profile."""
-    acc = account_mgr.register_account(
-        account_id=req.account_id,
-        account_name=req.account_name,
-        client_secret_json=req.client_secret_json,
-        token_json=req.token_json,
-    )
-    return acc.to_dict()
-
-
-@app.delete("/api/accounts/{account_id}")
-def delete_account_endpoint(account_id: str):
-    """Delete an account slot and credentials."""
-    removed = account_mgr.delete_account(account_id)
-    if not removed:
-        raise HTTPException(status_code=404, detail=f"Account '{account_id}' not found.")
-    return {"status": "success", "account_id": account_id}
-
-
-@app.post("/api/schedule/single")
-def schedule_single_endpoint(req: SingleScheduleRequest):
-    """
-    Schedule a single clip for a specific channel and time.
-    Moves clip from Unpublished to Published immediately to prevent duplicate posting.
-    """
-    try:
-        res = account_mgr.schedule_and_publish_clip(
-            stream_name=req.stream_name,
-            clip_id=req.clip_id,
-            account_id=req.account_id,
-            publish_at=req.publish_at,
-            title=req.title,
-            description=req.description,
-            tags=req.tags,
-            mock_if_no_creds=True,
-        )
-        return res
-    except Exception as e:
-        logger.error(f"Scheduling failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Scheduling failed: {e}")
-
-
-@app.post("/api/schedule/stagger")
-def schedule_stagger_endpoint(req: StaggerScheduleRequest):
-    """
-    Batch schedule an entire stream folder across multiple accounts over 7 days.
-    """
-    try:
-        start_dt = None
-        if req.start_date:
-            clean_str = req.start_date.replace("Z", "+00:00")
-            start_dt = datetime.fromisoformat(clean_str)
-
-        results = account_mgr.execute_smart_stagger(
-            stream_name=req.stream_name,
-            account_ids=req.account_ids,
-            start_datetime=start_dt,
-            days=req.days,
-        )
-        return {
-            "status": "success",
-            "stream_name": req.stream_name,
-            "scheduled_count": len(results),
-            "results": results,
-        }
-    except Exception as e:
-        logger.error(f"Smart stagger failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Smart stagger failed: {e}")
-
-
-def _delete_clip_files(stream_name: str, clip_id: str) -> bool:
-    """Permanently delete a video clip and its story/metadata files."""
-    deleted_any = False
-    for base_dir in [LIBRARY_UNPUBLISHED, LIBRARY_PUBLISHED]:
-        stream_dir = base_dir / stream_name
-        if not stream_dir.exists():
-            continue
-
-        targets = [
-            stream_dir / f"{clip_id}.mp4",
-            stream_dir / f"{clip_id}_story.mp4",
-            stream_dir / f"{clip_id}.json",
-            stream_dir / f"{clip_id}.ass",
-        ]
-
-        for p in stream_dir.glob(f".tmp_{clip_id}*"):
-            if p.is_dir():
-                shutil.rmtree(p, ignore_errors=True)
-                deleted_any = True
-            elif p.is_file():
-                p.unlink(missing_ok=True)
-                deleted_any = True
-
-        for t in targets:
-            if t.exists():
-                t.unlink(missing_ok=True)
-                deleted_any = True
-
-        # Clean up stream folder if no more video clips remain
-        remaining = list(stream_dir.glob("*_clip_*.mp4"))
-        if not remaining and stream_dir.exists():
-            shutil.rmtree(stream_dir, ignore_errors=True)
-
-    return deleted_any
-
-
-def _delete_stream_folder(stream_name: str) -> bool:
-    """Permanently delete an entire stream folder and all its clips."""
-    deleted_any = False
-    for base_dir in [LIBRARY_UNPUBLISHED, LIBRARY_PUBLISHED]:
-        stream_dir = base_dir / stream_name
-        if stream_dir.exists():
-            shutil.rmtree(stream_dir, ignore_errors=True)
-            deleted_any = True
-    return deleted_any
 
 
 @app.delete("/api/clips/{stream_name}/{clip_id}")
 def delete_clip_endpoint(stream_name: str, clip_id: str):
-    """
-    Permanently delete a video clip (raw cut, story fusion, and metadata).
-    """
-    success = _delete_clip_files(stream_name, clip_id)
-    if not success:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Clip '{clip_id}' not found in stream '{stream_name}'."
-        )
-    return {
-        "status": "success",
-        "message": f"Successfully deleted clip '{clip_id}'",
-        "stream_name": stream_name,
-        "clip_id": clip_id,
-    }
+    """Delete a single clip."""
+    unpub = LIBRARY_UNPUBLISHED / stream_name
+    deleted = False
+    for ext in (".mp4", ".json", "_raw.mp4", "_story.mp4"):
+        f = unpub / f"{clip_id}{ext}"
+        if f.exists():
+            f.unlink()
+            deleted = True
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Clip not found")
+    return {"status": "success", "clip_id": clip_id}
 
 
 @app.delete("/api/streams/{stream_name}")
 def delete_stream_endpoint(stream_name: str):
-    """
-    Permanently delete an entire stream folder and all of its clips.
-    """
-    success = _delete_stream_folder(stream_name)
-    if not success:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Stream '{stream_name}' not found."
-        )
-    return {
-        "status": "success",
-        "message": f"Successfully deleted stream '{stream_name}' and all associated clips.",
-        "stream_name": stream_name,
-    }
-
+    """Delete entire stream folder from unpublished."""
+    unpub = LIBRARY_UNPUBLISHED / stream_name
+    if unpub.exists():
+        shutil.rmtree(unpub)
+        return {"status": "success", "stream_name": stream_name}
+    raise HTTPException(status_code=404, detail="Stream folder not found")

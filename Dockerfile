@@ -39,7 +39,7 @@ COPY . .
 RUN pip install --no-cache-dir -e .
 
 # Create persistent storage directories
-RUN mkdir -p /app/library/unpublished /app/library/published /app/raw_streams /root/.config/autoclip/accounts
+RUN mkdir -p /app/library/unpublished /app/library/published /app/raw_streams /app/stories /root/.config/autoclip/accounts
 
 EXPOSE 8501
 

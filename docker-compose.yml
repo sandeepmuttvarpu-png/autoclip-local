@@ -19,6 +19,8 @@ services:
       - ./autoclip:/app/autoclip
       # Persistent Library for Unpublished and Published shorts
       - ./library:/app/library
+      # Stories vault for Method C batch text drops
+      - ./stories:/app/stories
       # Raw stream downloads
       - ./raw_streams:/app/raw_streams
       # YouTube credentials & tokens for your 3+ accounts

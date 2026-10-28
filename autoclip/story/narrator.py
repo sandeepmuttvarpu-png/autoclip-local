@@ -270,6 +270,22 @@ class StoryNarrator:
 
         return output_ass_path
 
+    def _generate_fallback_word_timestamps(self, text: str, total_duration: float) -> List[Word]:
+        """Algorithmic word-level timestamp generation if Whisper transcription fails."""
+        clean_words = text.split()
+        if not clean_words:
+            return []
+        total_chars = sum(len(w) for w in clean_words)
+        curr_time = 0.0
+        words: List[Word] = []
+        for w in clean_words:
+            frac = len(w) / max(total_chars, 1)
+            dur = max(0.15, frac * total_duration)
+            end_t = min(total_duration, curr_time + dur)
+            words.append(Word(word=w, start=curr_time, end=end_t, probability=1.0))
+            curr_time = end_t
+        return words
+
     def fuse_story_and_render(
         self,
         background_video_path: Path,
@@ -317,9 +333,15 @@ class StoryNarrator:
         if progress_callback:
             progress_callback(35, "Generating kinetic word timestamps...")
 
-        transcriber = self._get_transcriber()
-        transcript = transcriber.transcribe(voice_audio_path)
-        all_words = [w for s in transcript.segments for w in s.words]
+        try:
+            transcriber = self._get_transcriber()
+            transcript = transcriber.transcribe(voice_audio_path)
+            all_words = [w for s in transcript.segments for w in s.words]
+            if not all_words:
+                all_words = self._generate_fallback_word_timestamps(story_text, voice_duration)
+        except Exception as e:
+            logger.warning(f"Whisper transcription failed ({e}). Falling back to algorithmic speech timing...")
+            all_words = self._generate_fallback_word_timestamps(story_text, voice_duration)
 
         logger.info(f"Generating ASS subtitles ({len(all_words)} words)...")
         if progress_callback:

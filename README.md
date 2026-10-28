@@ -10,7 +10,7 @@
 [![Whisper: Faster-Whisper CUDA](https://img.shields.io/badge/Transcription-Faster--Whisper%20CUDA-purple?style=for-the-badge)](https://github.com/SYSTRAN/faster-whisper)
 [![TTS: Neural Edge-TTS](https://img.shields.io/badge/TTS-Edge--TTS%20Zero--Fee-cyan?style=for-the-badge)](#)
 [![YouTube: Multi-Channel](https://img.shields.io/badge/YouTube-Multi--Channel%20OAuth-red?style=for-the-badge&logo=youtube)](https://developers.google.com/youtube/v3)
-[![Tests: 19/19 Passing](https://img.shields.io/badge/Tests-19%2F19%20PASS%20%E2%9C%85-success?style=for-the-badge)](#)
+[![Tests: 26/26 Passing](https://img.shields.io/badge/Tests-26%2F26%20PASS%20%E2%9C%85-success?style=for-the-badge)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 [![No Cap: Verified](https://img.shields.io/badge/Cap%3A-Zero%20%F0%9F%A7%A2-orange?style=for-the-badge)](#)
 
@@ -136,42 +136,49 @@ flowchart TD
 ```text
 autoclip-local/
 ├── Dockerfile                  # CUDA 12.2 + FFmpeg NVENC container environment
-├── docker-compose.yml          # One-click GPU passthrough deployment
+├── docker-compose.yml          # One-click GPU passthrough deployment with persistent mounts
 ├── pyproject.toml              # Build specification and CLI entry points
 ├── requirements.txt            # Python dependencies
 ├── library/
+│   ├── accounts/               # Multi-channel YouTube accounts configuration
 │   ├── unpublished/            # Vault of sliced clips awaiting narrative fusion & scheduling
 │   └── published/              # Archived clips scheduled/published with JSON receipts
 ├── raw_streams/                # Storage directory for ingested 1-5 hr stream recordings
+├── stories/                    # Method C Stories Vault (drop *.txt stories here for batch pairing)
 ├── autoclip/
 │   ├── cli.py                  # Unified CLI commands (studio, slice, fuse-story, publish)
 │   ├── config.py               # Hardware detection and configuration engine
+│   ├── core/
+│   │   └── job_queue.py        # Asynchronous background job queue with SSE streaming HUD
 │   ├── stream/
-│   │   └── slicer.py           # 1-to-5 hour stream download & 2-min vertical slicer
+│   │   └── slicer.py           # 1-to-5 hour stream download & 2-min vertical slicer (no 20GB disk blowup)
 │   ├── story/
+│   │   ├── batch_assigner.py   # Method C: Auto-pairs stories/*.txt to 100+ sliced clips
+│   │   ├── loadouts.py         # Editing Loadouts (Voice, Subtitle styles & placement, Ducking)
 │   │   ├── generator.py        # Local LLM viral story generation & curated templates
 │   │   └── narrator.py         # TTS synthesis, audio ducking, hook cards, & ASS fusion
 │   ├── publisher/
 │   │   ├── account_manager.py  # Multi-channel manager & Smart Stagger scheduler
 │   │   └── youtube_scheduler.py# Resumable scheduled YouTube upload client
 │   ├── web/
-│   │   ├── app.py              # FastAPI backend API & HTTP 206 video streamer
+│   │   ├── app.py              # FastAPI backend API, SSE events & HTTP 206 video streamer
 │   │   └── templates/
-│   │       └── index.html      # Complete dark-mode interactive Studio UI
+│   │       └── index.html      # Complete dark-mode interactive Studio UI with Job HUD
 │   ├── audio/
-│   │   └── transcriber.py      # faster-whisper with word-level alignment
+│   │   └── transcriber.py      # faster-whisper with word-level alignment & fallback
 │   ├── intelligence/
 │   │   ├── prompt.py           # Few-shot viral hook scoring prompts
 │   │   ├── segmenter.py        # Local LLM virality ranking & JSON parser
 │   │   └── audio_spike_detector.py # RMS energy Z-score hype moment detector
-│   ├── vision/
-│   │   ├── face_tracker.py     # MediaPipe & OpenCV face tracking
-│   │   ├── reframer.py         # EMA 9:16 vertical crop solver
-│   │   └── gaming_stacked_crop.py # 35% webcam + 65% gameplay stacked cropper
+│   └── vision/
+│       ├── face_tracker.py     # MediaPipe & OpenCV face tracking
+│       ├── reframer.py         # EMA 9:16 vertical crop solver
+│       └── gaming_stacked_crop.py # 35% webcam + 65% gameplay stacked cropper
 └── tests/
-    ├── test_smoke.py           # Reframing, subtitles, and NVENC render tests
-    ├── test_addons.py          # Publisher, stacked cropper, and hype detector tests
-    └── test_studio.py          # Studio slicing, story fusion, scheduler, and API tests
+    ├── test_smoke.py               # Reframing, subtitles, and NVENC render tests
+    ├── test_addons.py              # Publisher, stacked cropper, and hype detector tests
+    ├── test_studio.py              # Studio slicing, story fusion, scheduler, and API tests
+    └── test_method_c_and_loadouts.py # JobQueue, StoryVault, Loadouts, and Batch Assigner tests
 ```
 
 ---
@@ -248,29 +255,36 @@ pytest -v
 
 ```text
 ============================= test session starts ==============================
-collected 19 items
+collected 26 items
 
-tests/test_addons.py::test_youtube_publish_at_formatter PASSED           [  5%]
-tests/test_addons.py::test_youtube_missing_credentials_error PASSED      [ 10%]
-tests/test_addons.py::test_youtube_scheduled_upload_mock PASSED          [ 15%]
-tests/test_addons.py::test_gaming_stacked_geometry PASSED                [ 21%]
-tests/test_addons.py::test_gaming_stacked_render_end_to_end PASSED       [ 26%]
-tests/test_addons.py::test_audio_spike_detection_synthetic PASSED        [ 31%]
-tests/test_smoke.py::test_reframer_aspect_ratio PASSED                   [ 36%]
-tests/test_smoke.py::test_kinetic_ass_builder PASSED                     [ 42%]
-tests/test_smoke.py::test_segmenter_json_parsing PASSED                  [ 47%]
-tests/test_smoke.py::test_end_to_end_nvenc_render PASSED                 [ 52%]
-tests/test_studio.py::test_stream_slicer PASSED                          [ 57%]
-tests/test_studio.py::test_story_generator_fallback_and_custom PASSED    [ 63%]
-tests/test_studio.py::test_story_narrator_subtitles_and_ducking PASSED   [ 68%]
+tests/test_addons.py::test_youtube_publish_at_formatter PASSED           [  3%]
+tests/test_addons.py::test_youtube_missing_credentials_error PASSED      [  7%]
+tests/test_addons.py::test_youtube_scheduled_upload_mock PASSED          [ 11%]
+tests/test_addons.py::test_gaming_stacked_geometry PASSED                [ 15%]
+tests/test_addons.py::test_gaming_stacked_render_end_to_end PASSED       [ 19%]
+tests/test_addons.py::test_audio_spike_detection_synthetic PASSED        [ 23%]
+tests/test_method_c_and_loadouts.py::test_job_queue_lifecycle PASSED     [ 26%]
+tests/test_method_c_and_loadouts.py::test_loadouts_manager PASSED        [ 30%]
+tests/test_method_c_and_loadouts.py::test_story_vault_parsing PASSED     [ 34%]
+tests/test_method_c_and_loadouts.py::test_api_stories_and_loadouts_endpoints PASSED [ 38%]
+tests/test_method_c_and_loadouts.py::test_api_async_slice_endpoint PASSED [ 42%]
+tests/test_smoke.py::test_reframer_aspect_ratio PASSED                   [ 46%]
+tests/test_smoke.py::test_kinetic_ass_builder PASSED                     [ 50%]
+tests/test_smoke.py::test_segmenter_json_parsing PASSED                  [ 53%]
+tests/test_smoke.py::test_end_to_end_nvenc_render PASSED                 [ 57%]
+tests/test_studio.py::test_stream_slicer PASSED                          [ 61%]
+tests/test_studio.py::test_story_generator_fallback_and_custom PASSED    [ 65%]
+tests/test_studio.py::test_story_narrator_subtitles_and_ducking PASSED   [ 69%]
 tests/test_studio.py::test_account_manager_state_transition PASSED       [ 73%]
-tests/test_studio.py::test_account_manager_smart_stagger PASSED          [ 78%]
-tests/test_studio.py::test_web_api_status_and_voices PASSED              [ 84%]
-tests/test_studio.py::test_web_api_story_generation PASSED               [ 89%]
-tests/test_studio.py::test_web_api_accounts_list PASSED                  [ 94%]
-tests/test_studio.py::test_web_api_video_streaming PASSED                [100%]
+tests/test_studio.py::test_account_manager_smart_stagger PASSED          [ 76%]
+tests/test_studio.py::test_web_api_status_and_voices PASSED              [ 80%]
+tests/test_studio.py::test_web_api_story_generation PASSED               [ 84%]
+tests/test_studio.py::test_web_api_accounts_list PASSED                  [ 88%]
+tests/test_studio.py::test_web_api_video_streaming PASSED                [ 92%]
+tests/test_studio.py::test_ass_subtitle_middle_center_alignment PASSED   [ 96%]
+tests/test_studio.py::test_web_api_delete_clip_and_stream PASSED         [100%]
 
-======================== 19 passed, 1 warning in 24.04s ========================
+============================= 26 passed in 25.22s ==============================
 ```
 
 ---

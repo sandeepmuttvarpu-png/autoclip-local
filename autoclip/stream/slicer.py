@@ -1,6 +1,6 @@
 """
-Continuous 1-to-5 hour Live Stream Downloader and 2-Minute 9:16 Vertical Slicer.
-Chunks massive VODs into back-to-back 1080x1920 vertical shorts via hardware NVENC.
+High-Throughput Continuous Stream Slicer and 2-Minute 9:16 Vertical Cropper.
+Supports direct HTTP seek-slicing via yt-dlp (zero 20GB download bottleneck) and local MP4/MKV files.
 """
 
 from dataclasses import dataclass
@@ -11,7 +11,9 @@ import re
 import shutil
 import subprocess
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
+
+from autoclip.core.job_queue import job_queue
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,7 @@ class ClipMetadata:
     end_sec: float
     duration: float
     file_path: str
-    status: str = "unpublished"  # "unpublished" or "published"
+    status: str = "unpublished"
     story_attached: bool = False
     story_headline: Optional[str] = None
     created_at: float = 0.0
@@ -65,7 +67,7 @@ class StreamMetadata:
 
 
 class StreamSlicer:
-    """Manages Twitch/YouTube stream ingestion and continuous 2-minute 9:16 slicing."""
+    """Slices 1-to-5 hour streams into back-to-back 2-minute 9:16 vertical shorts."""
 
     def __init__(self, nvenc_enabled: bool = True):
         self.nvenc_enabled = nvenc_enabled
@@ -75,11 +77,10 @@ class StreamSlicer:
 
     @staticmethod
     def clean_name(name: str) -> str:
-        """Sanitize filename to alphanumeric and underscores."""
         cleaned = re.sub(r"[^\w\s-]", "", name).strip().replace(" ", "_")
         return cleaned[:60] if cleaned else "stream_vod"
 
-    def get_duration(self, video_path: Path) -> float:
+    def get_duration(self, video_source: str) -> float:
         """Query duration in seconds using ffprobe."""
         cmd = [
             self.ffprobe_bin,
@@ -89,7 +90,7 @@ class StreamSlicer:
             "format=duration",
             "-of",
             "csv=p=0",
-            str(video_path),
+            video_source,
         ]
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
@@ -97,67 +98,80 @@ class StreamSlicer:
         except ValueError:
             return 0.0
 
-    def download_stream(self, url: str, output_dir: Path) -> Path:
-        """Download Twitch or YouTube stream using yt-dlp."""
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        logger.info(f"Querying stream metadata for: {url}")
-        # Get title first
-        title_cmd = [self.ytdlp_bin, "--get-title", url]
-        title_res = subprocess.run(title_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        raw_title = title_res.stdout.strip() if title_res.returncode == 0 else f"vod_{int(time.time())}"
-        safe_title = self.clean_name(raw_title)
-
-        out_template = output_dir / f"{safe_title}.%(ext)s"
+    def get_stream_urls(self, url: str) -> Tuple[str, str, float]:
+        """
+        Extract direct streaming URLs and title via yt-dlp without downloading to disk.
+        Returns (video_url, safe_title, duration_sec).
+        """
+        logger.info(f"Extracting direct stream metadata for: {url}")
         cmd = [
+            self.ytdlp_bin,
+            "--no-warnings",
+            "--dump-json",
+            url,
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if res.returncode != 0:
+            raise RuntimeError(f"Failed to query stream info via yt-dlp: {res.stderr}")
+
+        info = json.loads(res.stdout)
+        raw_title = info.get("title", f"stream_{int(time.time())}")
+        safe_title = self.clean_name(raw_title)
+        duration = float(info.get("duration", 0.0))
+
+        # Get direct stream URL
+        g_cmd = [
             self.ytdlp_bin,
             "-f",
             "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-            "--merge-output-format",
-            "mp4",
-            "-o",
-            str(out_template),
+            "-g",
             url,
         ]
-        logger.info(f"Downloading stream '{safe_title}'...")
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if res.returncode != 0:
-            raise RuntimeError(f"yt-dlp download failed: {res.stderr}")
+        g_res = subprocess.run(g_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if g_res.returncode != 0 or not g_res.stdout.strip():
+            raise RuntimeError(f"Could not resolve direct media URL: {g_res.stderr}")
 
-        # Find downloaded file
-        candidates = list(output_dir.glob(f"{safe_title}.*"))
-        if not candidates:
-            raise FileNotFoundError(f"Downloaded stream not found in {output_dir}")
-        return candidates[0]
+        direct_urls = g_res.stdout.strip().splitlines()
+        direct_url = direct_urls[0]  # First is video/merged
+        return direct_url, safe_title, duration
 
     def slice_stream_to_shorts(
         self,
-        video_path: Path,
+        source: Optional[str] = None,
+        video_path: Optional[Path] = None,
+        is_url: bool = False,
         segment_duration: float = 120.0,
         library_dir: Path = Path("library/unpublished"),
         max_clips: Optional[int] = None,
-        progress_callback=None,
+        job_id: Optional[str] = None,
     ) -> List[ClipMetadata]:
         """
-        Splits a 1-to-5 hour stream into back-to-back ~2-minute 1080x1920 (9:16) clips.
-        Stores them inside a dedicated folder named after the stream.
+        Slices stream into sequential 2-minute 9:16 (1080x1920) clips.
+        Stores them inside library/unpublished/<stream_name>/clip_XXX.mp4
         """
-        video_path = Path(video_path).resolve()
-        if not video_path.exists():
-            raise FileNotFoundError(f"Video file not found: {video_path}")
+        source_input = str(source or video_path)
+        if is_url:
+            if job_id:
+                job_queue.update_progress(job_id, 5.0, "Resolving direct stream URL via yt-dlp...")
+            media_input, stream_name, total_duration = self.get_stream_urls(source_input)
+            if total_duration <= 0.0:
+                total_duration = self.get_duration(media_input)
+        else:
+            p = Path(source_input).resolve()
+            if not p.exists():
+                raise FileNotFoundError(f"Source video file not found: {p}")
+            media_input = str(p)
+            stream_name = self.clean_name(p.stem)
+            total_duration = self.get_duration(media_input)
 
-        stream_name = self.clean_name(video_path.stem)
-        total_duration = self.get_duration(video_path)
         if total_duration <= 0.0:
-            raise ValueError(f"Could not determine valid duration for: {video_path}")
+            raise ValueError(f"Could not determine valid duration for: {source}")
 
         stream_folder = Path(library_dir) / stream_name
         stream_folder.mkdir(parents=True, exist_ok=True)
 
         # 9:16 vertical crop formula:
         # crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920
-        # Centered crop from landscape 16:9
         vf_filter = "crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920"
 
         clips: List[ClipMetadata] = []
@@ -166,7 +180,7 @@ class StreamSlicer:
         now = time.time()
 
         total_segments = int(total_duration // segment_duration)
-        if total_duration % segment_duration > 15.0:  # Include remainder if > 15s
+        if total_duration % segment_duration > 15.0:
             total_segments += 1
         if max_clips:
             total_segments = min(total_segments, max_clips)
@@ -179,97 +193,135 @@ class StreamSlicer:
             if max_clips and clip_idx > max_clips:
                 break
 
-            curr_end = min(curr_start + segment_duration, total_duration)
-            clip_len = curr_end - curr_start
-            min_len = min(10.0, segment_duration * 0.5)
-            if clip_len < min_len:  # Skip tiny residual tails
+            actual_duration = min(segment_duration, total_duration - curr_start)
+            min_threshold = min(15.0, segment_duration * 0.5)
+            if actual_duration < min_threshold:  # Skip tiny end slivers
                 break
 
             clip_id = f"{stream_name}_clip_{clip_idx:03d}"
-            clip_file = stream_folder / f"{clip_id}.mp4"
-            clip_meta_file = stream_folder / f"{clip_id}.json"
+            output_file = stream_folder / f"{clip_id}.mp4"
 
-            # Execute FFmpeg cut and 9:16 vertical crop
+            progress_pct = (clip_idx / total_segments) * 100.0
+            stage_msg = f"Slicing Clip {clip_idx}/{total_segments} ({curr_start/60.0:.1f}m - {(curr_start+actual_duration)/60.0:.1f}m)"
+
+            if job_id:
+                job_queue.update_progress(
+                    job_id=job_id,
+                    progress=progress_pct,
+                    stage=stage_msg,
+                    details={
+                        "stream_name": stream_name,
+                        "current_clip": clip_idx,
+                        "total_clips": total_segments,
+                    },
+                )
+
+            # Fast Seek with input seek (-ss before -i) for instant streaming seek
             cmd = [
                 self.ffmpeg_bin,
                 "-y",
                 "-ss",
-                f"{curr_start:.3f}",
-                "-to",
-                f"{curr_end:.3f}",
+                f"{curr_start:.2f}",
                 "-i",
-                str(video_path),
+                media_input,
+                "-t",
+                f"{actual_duration:.2f}",
                 "-vf",
                 vf_filter,
             ]
+
             if self.nvenc_enabled:
-                cmd.extend(
-                    [
-                        "-c:v",
-                        "h264_nvenc",
-                        "-preset",
-                        "p6",
-                        "-tune",
-                        "hq",
-                        "-b:v",
-                        "6M",
-                    ]
-                )
+                cmd.extend([
+                    "-c:v", "h264_nvenc",
+                    "-preset", "p5",
+                    "-b:v", "6M",
+                ])
             else:
-                cmd.extend(
-                    [
-                        "-c:v",
-                        "libx264",
-                        "-preset",
-                        "veryfast",
-                        "-crf",
-                        "22",
-                    ]
-                )
+                cmd.extend([
+                    "-c:v", "libx264",
+                    "-preset", "veryfast",
+                    "-crf", "22",
+                ])
 
-            cmd.extend(["-c:a", "aac", "-b:a", "128k", str(clip_file)])
+            cmd.extend([
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-movflags", "+faststart",
+                str(output_file),
+            ])
 
+            logger.info(f"Encoding clip {clip_idx}/{total_segments} -> {output_file.name}")
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
             if res.returncode != 0:
                 if self.nvenc_enabled:
-                    logger.warning(f"NVENC failed for clip {clip_idx}. Retrying with CPU libx264...")
+                    logger.warning(f"NVENC failed. Retrying with libx264 CPU fallback: {res.stderr}")
                     self.nvenc_enabled = False
+                    # Retry with CPU
+                    cpu_cmd = [
+                        self.ffmpeg_bin, "-y",
+                        "-ss", f"{curr_start:.2f}",
+                        "-i", media_input,
+                        "-t", f"{actual_duration:.2f}",
+                        "-vf", vf_filter,
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+                        str(output_file),
+                    ]
+                    res = subprocess.run(cpu_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+                if res.returncode != 0:
+                    logger.error(f"Failed to slice clip {clip_id}: {res.stderr}")
+                    curr_start += segment_duration
+                    clip_idx += 1
                     continue
-                else:
-                    logger.error(f"Failed to render clip {clip_idx}: {res.stderr}")
 
             meta = ClipMetadata(
                 clip_id=clip_id,
                 stream_name=stream_name,
                 clip_index=clip_idx,
                 start_sec=curr_start,
-                end_sec=curr_end,
-                duration=clip_len,
-                file_path=str(clip_file.resolve()),
+                end_sec=curr_start + actual_duration,
+                duration=actual_duration,
+                file_path=str(output_file),
                 status="unpublished",
                 created_at=now,
             )
-            # Save individual clip metadata JSON
-            with open(clip_meta_file, "w", encoding="utf-8") as f:
+
+            # Write clip JSON sidecar
+            meta_path = stream_folder / f"{clip_id}.json"
+            with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta.to_dict(), f, indent=2)
 
             clips.append(meta)
-            if progress_callback:
-                progress_callback(clip_idx, total_segments, meta)
-
-            curr_start = curr_end
+            curr_start += segment_duration
             clip_idx += 1
 
-        # Write overall stream summary
-        stream_meta = StreamMetadata(
-            stream_name=stream_name,
-            original_video_path=str(video_path),
-            total_duration_sec=total_duration,
-            clip_count=len(clips),
-            created_at=now,
-        )
-        with open(stream_folder / "stream_meta.json", "w", encoding="utf-8") as f:
-            json.dump(stream_meta.to_dict(), f, indent=2)
+        # Write stream summary index and stream_meta
+        summary_data = {
+            "stream_name": stream_name,
+            "original_video_path": media_input,
+            "total_duration_sec": total_duration,
+            "clip_count": len(clips),
+            "clips": [c.to_dict() for c in clips],
+            "created_at": now,
+        }
+        for summary_filename in ["stream_meta.json", "stream_summary.json"]:
+            summary_path = stream_folder / summary_filename
+            with open(summary_path, "w", encoding="utf-8") as f:
+                json.dump(summary_data, f, indent=2)
 
-        logger.info(f"✓ Successfully generated {len(clips)} shorts in: {stream_folder}")
+        if job_id:
+            job_queue.update_progress(
+                job_id=job_id,
+                progress=100.0,
+                stage="Slicing Complete",
+                details={"stream_name": stream_name, "total_clips": len(clips)},
+            )
+            job_queue.mark_completed(job_id=job_id, result={
+                "stream_name": stream_name,
+                "clips_count": len(clips),
+                "clips": [c.to_dict() for c in clips],
+            })
+
         return clips

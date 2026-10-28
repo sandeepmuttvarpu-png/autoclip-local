@@ -1,0 +1,7 @@
+AITA For Getting My Micromanaging Boss Fired By Following His Exact Orders?
+
+I work as a senior network engineer at a major logistics firm. Last month, our company hired a new director who had zero technical experience but loved power-tripping. He instituted a rule that no engineer was allowed to touch any server, deploy any patch, or fix any outage without his written approval via email first, no matter how urgent.
+
+Two weeks ago on a Friday afternoon at 4:45 PM, our primary warehouse dispatch server threw a critical cache memory fault. If the server wasn't restarted within ten minutes, the entire automated conveyor system would freeze and cost the company two hundred thousand dollars an hour. I immediately emailed the boss explaining the emergency and asked for authorization to restart it.
+
+He replied: "I am leaving the office for the weekend. Do not touch that server under any circumstances until I review the log file on Monday morning." I printed his email, backed it up, clocked out at 5:00 PM, and enjoyed my weekend. By Monday at 8:00 AM, the company had lost over 1.2 million dollars in halted shipments. During the emergency executive board meeting, he tried to blame me for negligence. I calmly projected his email onto the big screen. He was escorted out of the building ten minutes later. AITA?
