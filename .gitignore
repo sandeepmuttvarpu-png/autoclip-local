@@ -10,11 +10,21 @@ __pycache__/
 *.so
 .pytest_cache/
 
-# Outputs and temp media
+# Outputs and user media
 output_shorts/
 *.tmp*
 /tmp/
 demo_podcast.mp4
+raw_streams/*
+!raw_streams/.gitkeep
+library/unpublished/*
+!library/unpublished/.gitkeep
+library/published/*
+!library/published/.gitkeep
+*.mp4
+*.mkv
+*.wav
+*.mp3
 
 # Build and packaging
 build/

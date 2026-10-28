@@ -1,0 +1,30 @@
+services:
+  autoclip-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: autoclip-local:latest
+    container_name: autoclip-studio
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+      - LLM_URL=http://host.docker.internal:8080/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Persistent Library for Unpublished and Published shorts
+      - ./library:/app/library
+      # Raw stream downloads
+      - ./raw_streams:/app/raw_streams
+      # YouTube credentials & tokens for your 3+ accounts
+      - ~/.config/autoclip:/root/.config/autoclip
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, video, compute]
