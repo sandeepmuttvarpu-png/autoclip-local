@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoClip-Local Studio | 100% Local AI Video Repurposing</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            dark: {
+              900: '#0b0f19',
+              850: '#111827',
+              800: '#1f2937',
+              700: '#374151',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0b0f19; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #4f46e5; }
+    .aspect-9-16 { aspect-ratio: 9 / 16; }
+  </style>
+</head>
+<body class="bg-dark-900 text-gray-100 min-h-screen flex flex-col font-sans antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- TOP NAVIGATION BAR -->
+  <header class="border-b border-dark-800 bg-dark-850/80 backdrop-blur sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+        <i data-lucide="scissors" class="w-5 h-5 text-white"></i>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <span class="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-gray-200 to-indigo-300 bg-clip-text text-transparent">AutoClip-Local</span>
+          <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Studio v1.0</span>
+        </div>
+        <p class="text-xs text-gray-400">Continuous Stream Slicing & Multi-Account YouTube Scheduler</p>
+      </div>
+    </div>
+
+    <!-- System & Hardware Telemetry -->
+    <div class="flex items-center space-x-4">
+      <div class="hidden md:flex items-center space-x-3 px-3 py-1.5 rounded-lg bg-dark-800/80 border border-dark-700 text-xs">
+        <div class="flex items-center space-x-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-gray-300 font-medium" id="gpu-badge">NVIDIA RTX 5050 (NVENC)</span>
+        </div>
+        <span class="text-gray-600">|</span>
+        <div class="flex items-center space-x-1 text-gray-400">
+          <i data-lucide="cpu" class="w-3.5 h-3.5 text-indigo-400"></i>
+          <span>Whisper CUDA</span>
+        </div>
+        <span class="text-gray-600">|</span>
+        <div class="flex items-center space-x-1 text-gray-400">
+          <i data-lucide="mic" class="w-3.5 h-3.5 text-purple-400"></i>
+          <span>Edge-TTS Neural</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <button onclick="openModal('ingestModal')" class="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-xs font-semibold rounded-lg shadow-md transition shadow-indigo-600/30">
+        <i data-lucide="plus-circle" class="w-4 h-4"></i>
+        <span>Ingest & Slice Stream</span>
+      </button>
+
+      <button onclick="openModal('accountsModal')" class="flex items-center space-x-2 px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-gray-200 text-xs font-medium rounded-lg transition">
+        <i data-lucide="youtube" class="w-4 h-4 text-red-500"></i>
+        <span>YT Channels (<span id="accounts-count">3</span>)</span>
+      </button>
+
+      <button onclick="loadStreams()" class="p-2 hover:bg-dark-800 text-gray-400 hover:text-white rounded-lg transition" title="Refresh Vault">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN DASHBOARD CONTENT -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
+
+    <!-- OVERVIEW STATS CARDS -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="bg-dark-850 p-4 rounded-xl border border-dark-800 flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-gray-400">Unpublished Shorts</p>
+          <h3 class="text-2xl font-bold text-white mt-1" id="stat-unpub-clips">0</h3>
+          <p class="text-[11px] text-indigo-400 mt-1 flex items-center space-x-1">
+            <i data-lucide="clock" class="w-3 h-3"></i>
+            <span>Ready for scheduling</span>
+          </p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+          <i data-lucide="film" class="w-5 h-5 text-indigo-400"></i>
+        </div>
+      </div>
+
+      <div class="bg-dark-850 p-4 rounded-xl border border-dark-800 flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-gray-400">Published / Scheduled</p>
+          <h3 class="text-2xl font-bold text-emerald-400 mt-1" id="stat-pub-clips">0</h3>
+          <p class="text-[11px] text-emerald-500 mt-1 flex items-center space-x-1">
+            <i data-lucide="check-circle" class="w-3 h-3"></i>
+            <span>Live on YouTube</span>
+          </p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+          <i data-lucide="calendar" class="w-5 h-5 text-emerald-400"></i>
+        </div>
+      </div>
+
+      <div class="bg-dark-850 p-4 rounded-xl border border-dark-800 flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-gray-400">Active Stream VODs</p>
+          <h3 class="text-2xl font-bold text-white mt-1" id="stat-streams">0</h3>
+          <p class="text-[11px] text-gray-400 mt-1">1–5 hr ingest folders</p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+          <i data-lucide="folder-git-2" class="w-5 h-5 text-purple-400"></i>
+        </div>
+      </div>
+
+      <div class="bg-dark-850 p-4 rounded-xl border border-dark-800 flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-gray-400">Connected Accounts</p>
+          <h3 class="text-2xl font-bold text-white mt-1" id="stat-accounts">3</h3>
+          <p class="text-[11px] text-red-400 mt-1 flex items-center space-x-1">
+            <i data-lucide="youtube" class="w-3 h-3"></i>
+            <span>Multi-channel rotation</span>
+          </p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+          <i data-lucide="users" class="w-5 h-5 text-red-400"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- WORKFLOW NAVIGATION TABS -->
+    <div class="flex items-center justify-between border-b border-dark-800 pb-3">
+      <div class="flex items-center space-x-2">
+        <button id="tab-btn-unpub" onclick="switchSection('unpublished')" class="flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition bg-indigo-600 text-white shadow">
+          <i data-lucide="inbox" class="w-4 h-4"></i>
+          <span>Unpublished Vault</span>
+          <span id="tab-badge-unpub" class="ml-1.5 px-2 py-0.5 rounded-full text-xs bg-indigo-700 text-white">0</span>
+        </button>
+
+        <button id="tab-btn-pub" onclick="switchSection('published')" class="flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition bg-dark-800 text-gray-400 hover:text-white">
+          <i data-lucide="check-check" class="w-4 h-4 text-emerald-400"></i>
+          <span>Published Archives</span>
+          <span id="tab-badge-pub" class="ml-1.5 px-2 py-0.5 rounded-full text-xs bg-dark-700 text-gray-300">0</span>
+        </button>
+      </div>
+
+      <div class="text-xs text-gray-400 flex items-center space-x-2">
+        <span>Folders sorted by stream source</span>
+      </div>
+    </div>
+
+    <!-- STREAMS CONTAINER (Collapsible Folders) -->
+    <div id="streams-container" class="space-y-4">
+      <div class="text-center py-16 text-gray-500">
+        <i data-lucide="loader" class="w-8 h-8 mx-auto mb-2 animate-spin text-indigo-500"></i>
+        <p>Loading stream folders...</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ==================== MODALS ==================== -->
+
+  <!-- INGEST & SLICE STREAM MODAL -->
+  <div id="ingestModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-dark-850 border border-dark-700 rounded-2xl w-full max-w-xl p-6 shadow-2xl relative">
+      <button onclick="closeModal('ingestModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3 mb-5">
+        <div class="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+          <i data-lucide="film" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Continuous Stream Slicing</h3>
+          <p class="text-xs text-gray-400">Slice 1–5 hr Twitch or YouTube VODs into 2-min 9:16 vertical shorts</p>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        <!-- Ingest Mode Tabs -->
+        <div class="grid grid-cols-2 gap-2 bg-dark-900 p-1 rounded-lg border border-dark-700">
+          <button type="button" onclick="setIngestMode('url')" id="mode-btn-url" class="py-1.5 text-xs font-semibold rounded bg-indigo-600 text-white">Twitch / YouTube URL</button>
+          <button type="button" onclick="setIngestMode('file')" id="mode-btn-file" class="py-1.5 text-xs font-semibold rounded text-gray-400 hover:text-white">Local Video File</button>
+        </div>
+
+        <div id="input-url-group">
+          <label class="block text-xs font-medium text-gray-300 mb-1">Live Stream URL (yt-dlp)</label>
+          <input type="text" id="stream-url-input" placeholder="https://www.youtube.com/watch?v=... or https://www.twitch.tv/videos/..." class="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+        </div>
+
+        <div id="input-file-group" class="hidden">
+          <label class="block text-xs font-medium text-gray-300 mb-1">Local MP4 / MKV Absolute Path</label>
+          <input type="text" id="stream-file-input" value="/home/sandeep/dev/autoclip-local/demo_podcast.mp4" placeholder="/path/to/stream_recording.mp4" class="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-300 mb-1">Clip Duration (Seconds)</label>
+            <input type="number" id="segment-duration" value="120" min="30" max="180" class="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <span class="text-[11px] text-gray-500">Default: 120s (2 minutes)</span>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-300 mb-1">Max Clips (Optional)</label>
+            <input type="number" id="max-clips" placeholder="e.g. 50 (or leave empty for all)" class="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <span class="text-[11px] text-gray-500">Empty = slice full VOD</span>
+          </div>
+        </div>
+
+        <!-- NVENC indicator -->
+        <div class="p-3 rounded-lg bg-dark-900 border border-dark-700 flex items-center justify-between text-xs">
+          <span class="text-gray-400">Rendering Mode:</span>
+          <span class="font-semibold text-emerald-400 flex items-center space-x-1">
+            <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+            <span>NVIDIA NVENC Hardware Fast Slicing</span>
+          </span>
+        </div>
+
+        <div id="slice-progress-box" class="hidden p-3 rounded-lg bg-indigo-950/40 border border-indigo-500/30 text-xs space-y-2">
+          <div class="flex items-center justify-between text-indigo-300">
+            <span id="slice-status-msg" class="font-medium">Slicing stream with NVENC...</span>
+            <i data-lucide="loader" class="w-4 h-4 animate-spin"></i>
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-2 pt-2">
+          <button onclick="closeModal('ingestModal')" class="px-4 py-2 bg-dark-800 hover:bg-dark-700 text-gray-300 rounded-lg text-xs font-medium transition">Cancel</button>
+          <button onclick="startSlicing()" id="btn-start-slice" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1.5">
+            <i data-lucide="scissors" class="w-3.5 h-3.5"></i>
+            <span>Start Slicing</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STORY & VOICE STUDIO MODAL -->
+  <div id="storyModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-dark-850 border border-dark-700 rounded-2xl w-full max-w-2xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+      <button onclick="closeModal('storyModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+          <i data-lucide="mic" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Story & Voiceover Fusion Studio</h3>
+          <p class="text-xs text-gray-400">Attach viral drama story + neural voice + kinetic pop subtitles (HarryTalks style)</p>
+        </div>
+      </div>
+
+      <input type="hidden" id="story-stream-name">
+      <input type="hidden" id="story-clip-id">
+
+      <div class="space-y-4 text-xs">
+
+        <!-- Category & AI Generation -->
+        <div class="p-3 rounded-xl bg-dark-900 border border-dark-700 space-y-3">
+          <div class="flex items-center justify-between">
+            <label class="font-semibold text-gray-300">Story Genre / Category</label>
+            <div class="flex space-x-1">
+              <button onclick="generateStoryAI('aita')" class="px-2.5 py-1 rounded bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600 hover:text-white transition font-medium">AITA Drama</button>
+              <button onclick="generateStoryAI('revenge')" class="px-2.5 py-1 rounded bg-purple-600/30 text-purple-300 border border-purple-500/30 hover:bg-purple-600 hover:text-white transition font-medium">Pro Revenge</button>
+              <button onclick="generateStoryAI('drama')" class="px-2.5 py-1 rounded bg-amber-600/30 text-amber-300 border border-amber-500/30 hover:bg-amber-600 hover:text-white transition font-medium">Confessions</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-gray-400 mb-1">Opening Hook Headline (Displays on top card for first 3.5 seconds)</label>
+            <input type="text" id="story-headline" placeholder="AITA FOR EXPOSING MY FIANCÉE'S SECRET BANK ACCOUNT AT DINNER?" class="w-full bg-dark-850 border border-dark-700 rounded-lg px-3 py-2 text-xs font-bold text-yellow-300 focus:outline-none focus:border-indigo-500">
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-gray-400">Narrative Script (~280 words ≈ 2 min spoken)</label>
+              <span id="story-word-counter" class="text-gray-500">0 words (~0s)</span>
+            </div>
+            <textarea id="story-body" rows="6" oninput="updateWordCount()" placeholder="Type or click an AI genre button above to generate a viral first-person story..." class="w-full bg-dark-850 border border-dark-700 rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-indigo-500 leading-relaxed"></textarea>
+          </div>
+        </div>
+
+        <!-- Voice & Audio Ducking Settings -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="p-3 rounded-xl bg-dark-900 border border-dark-700 space-y-2">
+            <label class="font-semibold text-gray-300 block">Neural Voiceover</label>
+            <select id="story-voice-select" class="w-full bg-dark-850 border border-dark-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+              <option value="en-US-ChristopherNeural" selected>Christopher (Authoritative / Narrative Male) ★</option>
+              <option value="en-US-GuyNeural">Guy (Conversational Reddit Story Male) ★</option>
+              <option value="en-US-AriaNeural">Aria (Expressive Dynamic Female)</option>
+              <option value="en-US-JennyNeural">Jenny (Clear Conversational Female)</option>
+              <option value="en-US-EricNeural">Eric (Young Energetic Male)</option>
+              <option value="en-GB-RyanNeural">Ryan (British Male)</option>
+              <option value="en-GB-SoniaNeural">Sonia (British Female)</option>
+            </select>
+            <p class="text-[11px] text-gray-500">High-fidelity Edge-TTS neural voice without cloud API keys</p>
+          </div>
+
+          <div class="p-3 rounded-xl bg-dark-900 border border-dark-700 space-y-2">
+            <label class="font-semibold text-gray-300 block">Audio Ducking Calibration</label>
+            <div>
+              <div class="flex justify-between text-[11px] text-gray-400 mb-0.5">
+                <span>Background Game Audio</span>
+                <span id="bg-vol-label">12%</span>
+              </div>
+              <input type="range" id="bg-vol-slider" min="0" max="40" value="12" oninput="document.getElementById('bg-vol-label').innerText = this.value + '%'" class="w-full accent-indigo-500">
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] text-gray-400 mb-0.5">
+                <span>Voiceover Volume</span>
+                <span>100%</span>
+              </div>
+              <input type="range" id="voice-vol-slider" min="50" max="150" value="100" class="w-full accent-indigo-500">
+            </div>
+          </div>
+        </div>
+
+        <div id="render-progress-box" class="hidden p-3 rounded-lg bg-indigo-950/40 border border-indigo-500/30 text-xs space-y-2">
+          <div class="flex items-center justify-between text-indigo-300">
+            <span id="render-status-msg" class="font-medium">Fusing story and rendering with NVENC...</span>
+            <i data-lucide="loader" class="w-4 h-4 animate-spin"></i>
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-2 pt-2">
+          <button onclick="closeModal('storyModal')" class="px-4 py-2 bg-dark-800 hover:bg-dark-700 text-gray-300 rounded-lg text-xs font-medium transition">Cancel</button>
+          <button onclick="renderStory()" id="btn-render-story" class="px-5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1.5 shadow-lg shadow-indigo-600/20">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+            <span>Render Final Short (NVENC)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SINGLE SCHEDULE MODAL -->
+  <div id="scheduleModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-dark-850 border border-dark-700 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative">
+      <button onclick="closeModal('scheduleModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500">
+          <i data-lucide="calendar" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Schedule YouTube Short</h3>
+          <p class="text-xs text-gray-400">Publish scheduled release & move to Published section</p>
+        </div>
+      </div>
+
+      <input type="hidden" id="sched-stream-name">
+      <input type="hidden" id="sched-clip-id">
+
+      <div class="space-y-4 text-xs">
+        <div>
+          <label class="block font-medium text-gray-300 mb-1">Target YouTube Channel</label>
+          <select id="sched-account-select" class="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+            <option value="channel_1">Channel 1: Primary Shorts (@ChannelOne)</option>
+            <option value="channel_2">Channel 2: Gaming Clips HQ (@ChannelTwo)</option>
+            <option value="channel_3">Channel 3: Daily Viral Stories (@ChannelThree)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-medium text-gray-300 mb-1">Scheduled Publish Date & Time (UTC)</label>
+          <input type="datetime-local" id="sched-publish-at" class="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+          <span class="text-[11px] text-gray-500">Video will remain private until scheduled release</span>
+        </div>
+
+        <div>
+          <label class="block font-medium text-gray-300 mb-1">Video Title</label>
+          <input type="text" id="sched-title" class="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+        </div>
+
+        <div class="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/20 text-emerald-300 flex items-start space-x-2">
+          <i data-lucide="shield-check" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+          <span>Once scheduled, this video is permanently migrated to the <strong>Published Archives</strong> folder to guarantee zero duplicate posting.</span>
+        </div>
+
+        <div class="flex justify-end space-x-2 pt-2">
+          <button onclick="closeModal('scheduleModal')" class="px-4 py-2 bg-dark-800 hover:bg-dark-700 text-gray-300 rounded-lg text-xs font-medium transition">Cancel</button>
+          <button onclick="executeSingleSchedule()" id="btn-exec-sched" class="px-5 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1.5 shadow-lg shadow-red-600/20">
+            <i data-lucide="send" class="w-3.5 h-3.5"></i>
+            <span>Confirm & Schedule</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SMART STAGGER BATCH SCHEDULER MODAL -->
+  <div id="staggerModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-dark-850 border border-dark-700 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative">
+      <button onclick="closeModal('staggerModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+          <i data-lucide="calendar-days" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Smart Stagger 7-Day Scheduler</h3>
+          <p class="text-xs text-gray-400">Distribute all clips across your 3 YouTube channels over 7 days</p>
+        </div>
+      </div>
+
+      <input type="hidden" id="stagger-stream-name">
+
+      <div class="space-y-4 text-xs">
+        <div class="p-3 rounded-lg bg-dark-900 border border-dark-700">
+          <p class="text-gray-300 font-semibold mb-1">Target Stream Folder:</p>
+          <p id="stagger-stream-title" class="font-mono text-indigo-400"></p>
+        </div>
+
+        <div>
+          <label class="block font-medium text-gray-300 mb-2">Select Channels for Round-Robin Distribution:</label>
+          <div class="space-y-1.5" id="stagger-accounts-checkboxes">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-medium text-gray-300 mb-1">Spread Across (Days)</label>
+            <input type="number" id="stagger-days" value="7" min="1" max="30" class="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-xs text-white">
+          </div>
+          <div>
+            <label class="block font-medium text-gray-300 mb-1">Peak Release Times</label>
+            <div class="text-[11px] text-gray-400 py-2">12:00, 17:00, 21:00 UTC</div>
+          </div>
+        </div>
+
+        <div id="stagger-progress-box" class="hidden p-3 rounded-lg bg-indigo-950/40 border border-indigo-500/30 space-y-2">
+          <div class="flex items-center justify-between text-indigo-300">
+            <span id="stagger-status-msg" class="font-medium">Scheduling and migrating clips...</span>
+            <i data-lucide="loader" class="w-4 h-4 animate-spin"></i>
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-2 pt-2">
+          <button onclick="closeModal('staggerModal')" class="px-4 py-2 bg-dark-800 hover:bg-dark-700 text-gray-300 rounded-lg text-xs font-medium transition">Cancel</button>
+          <button onclick="executeStaggerSchedule()" id="btn-exec-stagger" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1.5 shadow-lg shadow-indigo-600/20">
+            <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+            <span>Schedule All 100 Clips</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACCOUNTS MANAGEMENT MODAL -->
+  <div id="accountsModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-dark-850 border border-dark-700 rounded-2xl w-full max-w-xl p-6 shadow-2xl relative">
+      <button onclick="closeModal('accountsModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500">
+          <i data-lucide="youtube" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Connected YouTube Channels</h3>
+          <p class="text-xs text-gray-400">Manage independent credentials for up to 3+ YouTube channels</p>
+        </div>
+      </div>
+
+      <div class="space-y-3" id="accounts-list-container">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <div class="mt-4 pt-4 border-t border-dark-700 flex justify-end">
+        <button onclick="closeModal('accountsModal')" class="px-4 py-2 bg-dark-800 hover:bg-dark-700 text-gray-300 rounded-lg text-xs font-medium">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIDEO PREVIEW PLAYER MODAL -->
+  <div id="playerModal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-dark-850 border border-dark-700 rounded-2xl max-w-md w-full p-4 shadow-2xl relative flex flex-col items-center">
+      <button onclick="closePlayerModal()" class="absolute top-3 right-3 text-gray-400 hover:text-white z-10 bg-dark-900/80 p-1.5 rounded-full">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <h4 id="player-title" class="text-xs font-bold text-gray-300 mb-3 truncate w-full text-center">Clip Preview</h4>
+
+      <div class="w-full max-w-[340px] aspect-9-16 bg-black rounded-xl overflow-hidden shadow-2xl border border-dark-700">
+        <video id="studio-video-player" controls playsinline class="w-full h-full object-cover">
+          <source id="video-source" src="" type="video/mp4">
+        </video>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP STATE & SCRIPT LOGIC -->
+  <script>
+    let currentSection = 'unpublished';
+    let streamsData = { unpublished: [], published: [] };
+    let accountsData = [];
+
+    // Initialize App
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      loadSystemStatus();
+      loadAccounts();
+      loadStreams();
+
+      // Default schedule publish_at to tomorrow at 18:00
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(18, 0, 0, 0);
+      const isoStr = tomorrow.toISOString().slice(0, 16);
+      const publishAtInput = document.getElementById('sched-publish-at');
+      if (publishAtInput) publishAtInput.value = isoStr;
+    });
+
+    function setIngestMode(mode) {
+      if (mode === 'url') {
+        document.getElementById('input-url-group').classList.remove('hidden');
+        document.getElementById('input-file-group').classList.add('hidden');
+        document.getElementById('mode-btn-url').className = "py-1.5 text-xs font-semibold rounded bg-indigo-600 text-white";
+        document.getElementById('mode-btn-file').className = "py-1.5 text-xs font-semibold rounded text-gray-400 hover:text-white";
+      } else {
+        document.getElementById('input-url-group').classList.add('hidden');
+        document.getElementById('input-file-group').classList.remove('hidden');
+        document.getElementById('mode-btn-file').className = "py-1.5 text-xs font-semibold rounded bg-indigo-600 text-white";
+        document.getElementById('mode-btn-url').className = "py-1.5 text-xs font-semibold rounded text-gray-400 hover:text-white";
+      }
+    }
+
+    async function loadSystemStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        document.getElementById('stat-unpub-clips').innerText = data.unpublished_clips_count;
+        document.getElementById('stat-pub-clips').innerText = data.published_clips_count;
+        document.getElementById('stat-streams').innerText = data.unpublished_streams_count + data.published_streams_count;
+        document.getElementById('stat-accounts').innerText = data.accounts_count;
+        document.getElementById('accounts-count').innerText = data.accounts_count;
+        if (data.gpu_name) {
+          document.getElementById('gpu-badge').innerText = data.gpu_name;
+        }
+      } catch (e) {
+        console.error('Failed to load status', e);
+      }
+    }
+
+    async function loadAccounts() {
+      try {
+        const res = await fetch('/api/accounts');
+        accountsData = await res.json();
+
+        // Populate dropdown in single schedule
+        const select = document.getElementById('sched-account-select');
+        select.innerHTML = '';
+        accountsData.forEach(acc => {
+          const opt = document.createElement('option');
+          opt.value = acc.account_id;
+          opt.innerText = acc.account_name;
+          select.appendChild(opt);
+        });
+
+        // Populate accounts modal list
+        const listContainer = document.getElementById('accounts-list-container');
+        listContainer.innerHTML = '';
+        accountsData.forEach(acc => {
+          const item = document.createElement('div');
+          item.className = "p-3 rounded-xl bg-dark-900 border border-dark-700 flex items-center justify-between";
+          item.innerHTML = `
+            <div>
+              <div class="flex items-center space-x-2">
+                <span class="font-bold text-xs text-white">${acc.account_name}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded font-mono ${acc.is_authenticated ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}">
+                  ${acc.is_authenticated ? 'Authenticated' : 'OAuth Ready'}
+                </span>
+              </div>
+              <p class="text-[11px] text-gray-500 font-mono mt-0.5">ID: ${acc.account_id}</p>
+            </div>
+            <div class="text-[11px] text-gray-400">
+              <span class="px-2 py-1 rounded bg-dark-800 border border-dark-700">Slot Active</span>
+            </div>
+          `;
+          listContainer.appendChild(item);
+        });
+
+        // Populate stagger accounts checkboxes
+        const staggerBoxes = document.getElementById('stagger-accounts-checkboxes');
+        staggerBoxes.innerHTML = '';
+        accountsData.forEach(acc => {
+          const div = document.createElement('label');
+          div.className = "flex items-center space-x-2 p-2 rounded bg-dark-850 border border-dark-700 cursor-pointer hover:border-indigo-500";
+          div.innerHTML = `
+            <input type="checkbox" name="stagger-acc" value="${acc.account_id}" checked class="rounded text-indigo-600 focus:ring-0">
+            <span class="text-xs text-gray-200">${acc.account_name}</span>
+          `;
+          staggerBoxes.appendChild(div);
+        });
+      } catch (e) {
+        console.error('Failed to load accounts', e);
+      }
+    }
+
+    async function loadStreams() {
+      try {
+        const res = await fetch('/api/streams');
+        streamsData = await res.json();
+        
+        const unpubCount = streamsData.unpublished.reduce((acc, s) => acc + s.clip_count, 0);
+        const pubCount = streamsData.published.reduce((acc, s) => acc + s.clip_count, 0);
+
+        document.getElementById('tab-badge-unpub').innerText = unpubCount;
+        document.getElementById('tab-badge-pub').innerText = pubCount;
+        document.getElementById('stat-unpub-clips').innerText = unpubCount;
+        document.getElementById('stat-pub-clips').innerText = pubCount;
+
+        renderCurrentSection();
+      } catch (e) {
+        console.error('Failed to load streams', e);
+      }
+    }
+
+    function switchSection(section) {
+      currentSection = section;
+      const unpubBtn = document.getElementById('tab-btn-unpub');
+      const pubBtn = document.getElementById('tab-btn-pub');
+
+      if (section === 'unpublished') {
+        unpubBtn.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition bg-indigo-600 text-white shadow";
+        pubBtn.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition bg-dark-800 text-gray-400 hover:text-white";
+      } else {
+        pubBtn.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition bg-emerald-600 text-white shadow";
+        unpubBtn.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition bg-dark-800 text-gray-400 hover:text-white";
+      }
+      renderCurrentSection();
+    }
+
+    function renderCurrentSection() {
+      const container = document.getElementById('streams-container');
+      const list = currentSection === 'unpublished' ? streamsData.unpublished : streamsData.published;
+
+      if (!list || list.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-16 bg-dark-850 rounded-2xl border border-dark-800">
+            <div class="w-12 h-12 rounded-2xl bg-dark-800 mx-auto flex items-center justify-center text-gray-500 mb-3">
+              <i data-lucide="${currentSection === 'unpublished' ? 'inbox' : 'archive'}" class="w-6 h-6"></i>
+            </div>
+            <h4 class="text-sm font-semibold text-gray-300">No ${currentSection} video clips found</h4>
+            <p class="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
+              ${currentSection === 'unpublished' 
+                ? 'Click "+ Ingest & Slice Stream" at the top to slice a 1–5 hr Twitch or YouTube live stream into 2-min vertical shorts.' 
+                : 'Videos you schedule will automatically move here from the Unpublished Vault.'}
+            </p>
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = '';
+      list.forEach((stream, index) => {
+        const folderDiv = document.createElement('div');
+        folderDiv.className = "bg-dark-850 rounded-2xl border border-dark-800 overflow-hidden shadow-lg transition";
+
+        // Accordion Header
+        const header = document.createElement('div');
+        header.className = "p-4 bg-dark-800/50 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none hover:bg-dark-800 transition";
+        header.onclick = () => toggleFolder(`folder-body-${index}`);
+
+        const durMins = (stream.total_duration_sec / 60).toFixed(0);
+
+        header.innerHTML = `
+          <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+              <i data-lucide="folder" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <div class="flex items-center space-x-2">
+                <h4 class="text-sm font-bold text-white tracking-wide">${stream.stream_name}</h4>
+                <span class="text-[11px] px-2 py-0.5 rounded-full font-semibold ${currentSection === 'unpublished' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}">
+                  ${stream.clip_count} Shorts (2-min each)
+                </span>
+              </div>
+              <p class="text-[11px] text-gray-400 mt-0.5">Stream Source Duration: ~${durMins} mins | Format: 9:16 Vertical (1080x1920)</p>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-2" onclick="event.stopPropagation()">
+            ${currentSection === 'unpublished' ? `
+              <button onclick="openStaggerModal('${stream.stream_name}')" class="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs font-semibold transition flex items-center space-x-1.5 shadow">
+                <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                <span>Smart Stagger (7-Day Batch)</span>
+              </button>
+            ` : ''}
+            <i data-lucide="chevron-down" id="chev-folder-body-${index}" class="w-5 h-5 text-gray-400 transition-transform duration-200"></i>
+          </div>
+        `;
+
+        // Accordion Body (Grid of 9:16 clips)
+        const body = document.createElement('div');
+        body.id = `folder-body-${index}`;
+        body.className = "p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 border-t border-dark-800";
+
+        stream.clips.forEach(clip => {
+          const card = document.createElement('div');
+          card.className = "bg-dark-900 border border-dark-700/80 rounded-xl overflow-hidden flex flex-col hover:border-indigo-500/50 transition group";
+
+          const hasStory = clip.story_attached;
+          const isPub = clip.status === 'published';
+
+          card.innerHTML = `
+            <div class="aspect-9-16 bg-black relative overflow-hidden flex items-center justify-center cursor-pointer" onclick="openPlayerModal('${currentSection}', '${stream.stream_name}', '${clip.clip_id}')">
+              <video class="w-full h-full object-cover group-hover:scale-105 transition duration-300" preload="metadata" muted>
+                <source src="/api/clips/${currentSection}/${stream.stream_name}/${clip.clip_id}/video" type="video/mp4">
+              </video>
+              <div class="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition flex items-center justify-center">
+                <div class="w-10 h-10 rounded-full bg-black/60 backdrop-blur border border-white/20 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition">
+                  <i data-lucide="play" class="w-5 h-5 fill-white ml-0.5"></i>
+                </div>
+              </div>
+              <div class="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-black/70 text-white backdrop-blur">
+                #${String(clip.clip_index || 1).padStart(3, '0')}
+              </div>
+              <div class="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-dark-900/80 backdrop-blur ${hasStory ? 'text-purple-400 border border-purple-500/30' : 'text-gray-400'}">
+                ${hasStory ? '🎙️ Story' : 'No Story'}
+              </div>
+              <div class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/80 text-gray-300">
+                02:00
+              </div>
+            </div>
+
+            <div class="p-2.5 flex-1 flex flex-col justify-between space-y-2">
+              <div>
+                <p class="text-[11px] font-bold text-gray-200 line-clamp-2 leading-tight">
+                  ${clip.story_headline || clip.clip_id}
+                </p>
+                ${isPub ? `
+                  <p class="text-[10px] text-emerald-400 font-medium mt-1 truncate">
+                    ✓ Scheduled: ${clip.published_account_name || 'YouTube'}
+                  </p>
+                ` : ''}
+              </div>
+
+              <div class="space-y-1 pt-1 border-t border-dark-800">
+                ${!isPub ? `
+                  <button onclick="openStoryModal('${stream.stream_name}', '${clip.clip_id}', '${(clip.story_headline || '').replace(/'/g, "\\'")}')" class="w-full py-1 rounded bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 text-[10px] font-semibold transition flex items-center justify-center space-x-1">
+                    <i data-lucide="mic" class="w-3 h-3"></i>
+                    <span>${hasStory ? 'Edit Story' : 'Add Story'}</span>
+                  </button>
+                  <button onclick="openScheduleModal('${stream.stream_name}', '${clip.clip_id}', '${(clip.story_headline || '').replace(/'/g, "\\'")}')" class="w-full py-1 rounded bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 text-[10px] font-semibold transition flex items-center justify-center space-x-1">
+                    <i data-lucide="calendar" class="w-3 h-3"></i>
+                    <span>Schedule</span>
+                  </button>
+                ` : `
+                  <a href="${clip.youtube_url || '#'}" target="_blank" class="w-full py-1 rounded bg-dark-800 hover:bg-red-600 text-gray-300 hover:text-white text-[10px] font-medium transition flex items-center justify-center space-x-1">
+                    <i data-lucide="external-link" class="w-3 h-3"></i>
+                    <span>View Short</span>
+                  </a>
+                `}
+              </div>
+            </div>
+          `;
+
+          body.appendChild(card);
+        });
+
+        folderDiv.appendChild(header);
+        folderDiv.appendChild(body);
+        container.appendChild(folderDiv);
+      });
+
+      lucide.createIcons();
+    }
+
+    function toggleFolder(id) {
+      const el = document.getElementById(id);
+      const chev = document.getElementById(`chev-${id}`);
+      if (el.classList.contains('hidden')) {
+        el.classList.remove('hidden');
+        if (chev) chev.style.transform = "rotate(0deg)";
+      } else {
+        el.classList.add('hidden');
+        if (chev) chev.style.transform = "rotate(-90deg)";
+      }
+    }
+
+    function openModal(id) {
+      document.getElementById(id).classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    function openPlayerModal(section, streamName, clipId) {
+      const modal = document.getElementById('playerModal');
+      const player = document.getElementById('studio-video-player');
+      const source = document.getElementById('video-source');
+      const title = document.getElementById('player-title');
+
+      title.innerText = `${streamName} / ${clipId}`;
+      source.src = `/api/clips/${section}/${streamName}/${clipId}/video`;
+      player.load();
+      player.play().catch(() => {});
+      modal.classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closePlayerModal() {
+      const modal = document.getElementById('playerModal');
+      const player = document.getElementById('studio-video-player');
+      player.pause();
+      modal.classList.add('hidden');
+    }
+
+    // SLICING LOGIC
+    async function startSlicing() {
+      const isUrlMode = !document.getElementById('input-url-group').classList.contains('hidden');
+      const url = document.getElementById('stream-url-input').value.trim();
+      const localPath = document.getElementById('stream-file-input').value.trim();
+      const segmentDur = parseFloat(document.getElementById('segment-duration').value) || 120.0;
+      const maxClipsVal = document.getElementById('max-clips').value.trim();
+      const maxClips = maxClipsVal ? parseInt(maxClipsVal) : null;
+
+      if (isUrlMode && !url) {
+        alert('Please enter a Twitch or YouTube stream URL.');
+        return;
+      }
+      if (!isUrlMode && !localPath) {
+        alert('Please enter a local video file path.');
+        return;
+      }
+
+      const progressBox = document.getElementById('slice-progress-box');
+      const btn = document.getElementById('btn-start-slice');
+      progressBox.classList.remove('hidden');
+      btn.disabled = true;
+
+      try {
+        const payload = {
+          source_type: isUrlMode ? "url" : "local_file",
+          url: isUrlMode ? url : null,
+          local_path: !isUrlMode ? localPath : null,
+          segment_duration: segmentDur,
+          max_clips: maxClips,
+        };
+
+        const res = await fetch('/api/streams/slice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || 'Slicing failed');
+        }
+
+        alert(`✓ Slicing completed successfully! Generated ${data.clips_count} 2-minute 9:16 shorts.`);
+        closeModal('ingestModal');
+        await loadStreams();
+      } catch (err) {
+        alert('Error slicing stream: ' + err.message);
+      } finally {
+        progressBox.classList.add('hidden');
+        btn.disabled = false;
+      }
+    }
+
+    // STORY STUDIO LOGIC
+    function openStoryModal(streamName, clipId, headline) {
+      document.getElementById('story-stream-name').value = streamName;
+      document.getElementById('story-clip-id').value = clipId;
+      document.getElementById('story-headline').value = headline || "AITA FOR THIS UNBELIEVABLE DRAMA?";
+      if (!document.getElementById('story-body').value) {
+        generateStoryAI('aita');
+      }
+      openModal('storyModal');
+    }
+
+    async function generateStoryAI(category) {
+      try {
+        const headlineInput = document.getElementById('story-headline');
+        const bodyInput = document.getElementById('story-body');
+        bodyInput.value = "Contacting Local LLM / Generating gripping story narrative...";
+
+        const res = await fetch('/api/story/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category: category, target_duration_sec: 120.0 }),
+        });
+        const data = await res.json();
+        headlineInput.value = data.headline;
+        bodyInput.value = data.story_text;
+        updateWordCount();
+      } catch (e) {
+        console.error('Failed to generate story', e);
+      }
+    }
+
+    function updateWordCount() {
+      const text = document.getElementById('story-body').value.trim();
+      const count = text ? text.split(/\s+/).length : 0;
+      const estSec = Math.round((count / 145.0) * 60);
+      document.getElementById('story-word-counter').innerText = `${count} words (~${estSec}s)`;
+    }
+
+    async function renderStory() {
+      const streamName = document.getElementById('story-stream-name').value;
+      const clipId = document.getElementById('story-clip-id').value;
+      const headline = document.getElementById('story-headline').value.trim();
+      const storyText = document.getElementById('story-body').value.trim();
+      const voiceId = document.getElementById('story-voice-select').value;
+      const bgVol = parseFloat(document.getElementById('bg-vol-slider').value) / 100.0;
+      const voiceVol = parseFloat(document.getElementById('voice-vol-slider').value) / 100.0;
+
+      if (!storyText) {
+        alert('Please provide or generate a story script.');
+        return;
+      }
+
+      const progressBox = document.getElementById('render-progress-box');
+      const btn = document.getElementById('btn-render-story');
+      progressBox.classList.remove('hidden');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/story/render', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stream_name: streamName,
+            clip_id: clipId,
+            headline: headline,
+            story_text: storyText,
+            voice_id: voiceId,
+            bg_audio_volume: bgVol,
+            voice_volume: voiceVol,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || 'Rendering failed');
+        }
+
+        alert(`✓ Story short rendered successfully! Spoken duration: ${data.duration.toFixed(1)}s.`);
+        closeModal('storyModal');
+        await loadStreams();
+      } catch (err) {
+        alert('Error rendering story short: ' + err.message);
+      } finally {
+        progressBox.classList.add('hidden');
+        btn.disabled = false;
+      }
+    }
+
+    // SINGLE SCHEDULE LOGIC
+    function openScheduleModal(streamName, clipId, headline) {
+      document.getElementById('sched-stream-name').value = streamName;
+      document.getElementById('sched-clip-id').value = clipId;
+      document.getElementById('sched-title').value = (headline || clipId) + " #Shorts";
+      openModal('scheduleModal');
+    }
+
+    async function executeSingleSchedule() {
+      const streamName = document.getElementById('sched-stream-name').value;
+      const clipId = document.getElementById('sched-clip-id').value;
+      const accountId = document.getElementById('sched-account-select').value;
+      const publishAt = document.getElementById('sched-publish-at').value;
+      const title = document.getElementById('sched-title').value.trim();
+
+      if (!publishAt) {
+        alert('Please choose a publish date and time.');
+        return;
+      }
+
+      const btn = document.getElementById('btn-exec-sched');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/schedule/single', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stream_name: streamName,
+            clip_id: clipId,
+            account_id: accountId,
+            publish_at: publishAt,
+            title: title,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || 'Scheduling failed');
+        }
+
+        alert(`✓ Scheduled successfully for ${data.account_name} at ${data.publish_at}!\nVideo moved to Published Archives.`);
+        closeModal('scheduleModal');
+        await loadStreams();
+        switchSection('published');
+      } catch (err) {
+        alert('Error scheduling video: ' + err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // SMART STAGGER BATCH LOGIC
+    function openStaggerModal(streamName) {
+      document.getElementById('stagger-stream-name').value = streamName;
+      document.getElementById('stagger-stream-title').innerText = streamName;
+      openModal('staggerModal');
+    }
+
+    async function executeStaggerSchedule() {
+      const streamName = document.getElementById('stagger-stream-name').value;
+      const checkedBoxes = Array.from(document.querySelectorAll('input[name="stagger-acc"]:checked')).map(cb => cb.value);
+      const days = parseInt(document.getElementById('stagger-days').value) || 7;
+
+      if (checkedBoxes.length === 0) {
+        alert('Please select at least one YouTube channel.');
+        return;
+      }
+
+      const progressBox = document.getElementById('stagger-progress-box');
+      const btn = document.getElementById('btn-exec-stagger');
+      progressBox.classList.remove('hidden');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/schedule/stagger', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stream_name: streamName,
+            account_ids: checkedBoxes,
+            days: days,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || 'Stagger schedule failed');
+        }
+
+        alert(`✓ Smart Stagger Completed! Successfully scheduled ${data.scheduled_count} shorts across your channels over the next ${days} days.\nAll clips moved to Published Archives.`);
+        closeModal('staggerModal');
+        await loadStreams();
+        switchSection('published');
+      } catch (err) {
+        alert('Error during batch stagger: ' + err.message);
+      } finally {
+        progressBox.classList.add('hidden');
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
