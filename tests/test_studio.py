@@ -326,3 +326,75 @@ def test_web_api_video_streaming(test_video: Path):
         if stream_folder.exists():
             shutil.rmtree(stream_folder)
 
+
+def test_ass_subtitle_middle_center_alignment(tmp_path: Path):
+    """Verify ASS subtitles default to Alignment 5 (Middle Center) and MarginV 0."""
+    from autoclip.subtitle.ass_builder import AssSubtitleBuilder
+    from autoclip.audio.transcriber import Word
+
+    builder = AssSubtitleBuilder()
+    assert builder.alignment == 5
+    assert builder.margin_v == 0
+
+    words = [
+        Word(word="MIDDLE", start=0.0, end=0.5, probability=0.99),
+        Word(word="SCREEN", start=0.5, end=1.0, probability=0.99),
+        Word(word="TEXT", start=1.0, end=1.5, probability=0.99),
+    ]
+    out_ass = tmp_path / "test_center.ass"
+    builder.build_ass(words, clip_start=0.0, clip_end=2.0, output_path=out_ass)
+
+    with open(out_ass, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Style line must specify Alignment 5 (middle center) and MarginV 0
+    assert ",5,60,60,0,1" in content
+    assert "MIDDLE" in content
+
+
+def test_web_api_delete_clip_and_stream(test_video: Path):
+    """Verify DELETE /api/clips/{stream}/{clip} and DELETE /api/streams/{stream}."""
+    client = TestClient(app)
+
+    stream_name = "test_delete_stream"
+    stream_folder = Path(f"library/unpublished/{stream_name}")
+    stream_folder.mkdir(parents=True, exist_ok=True)
+
+    clip_1 = stream_folder / f"{stream_name}_clip_001.mp4"
+    clip_1_story = stream_folder / f"{stream_name}_clip_001_story.mp4"
+    clip_1_json = stream_folder / f"{stream_name}_clip_001.json"
+    clip_2 = stream_folder / f"{stream_name}_clip_002.mp4"
+
+    shutil.copy(str(test_video), str(clip_1))
+    shutil.copy(str(test_video), str(clip_1_story))
+    clip_1_json.write_text('{"clip_id": "test_delete_stream_clip_001"}')
+    shutil.copy(str(test_video), str(clip_2))
+
+    try:
+        # 1. Delete clip 001
+        res = client.delete(f"/api/clips/{stream_name}/{stream_name}_clip_001")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "success"
+        assert not clip_1.exists()
+        assert not clip_1_story.exists()
+        assert not clip_1_json.exists()
+        assert clip_2.exists()  # Clip 2 is preserved
+
+        # 2. Delete non-existent clip -> 404
+        res_404 = client.delete(f"/api/clips/{stream_name}/nonexistent_clip")
+        assert res_404.status_code == 404
+
+        # 3. Delete entire stream
+        res_stream = client.delete(f"/api/streams/{stream_name}")
+        assert res_stream.status_code == 200
+        assert not stream_folder.exists()
+
+        # 4. Delete already deleted stream -> 404
+        res_stream_404 = client.delete(f"/api/streams/{stream_name}")
+        assert res_stream_404.status_code == 404
+    finally:
+        if stream_folder.exists():
+            shutil.rmtree(stream_folder)
+
+

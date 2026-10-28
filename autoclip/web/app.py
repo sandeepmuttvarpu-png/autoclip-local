@@ -100,6 +100,8 @@ class RenderStoryRequest(BaseModel):
     voice_id: str = "en-US-ChristopherNeural"
     bg_audio_volume: float = 0.12
     voice_volume: float = 1.0
+    alignment: int = 5  # 5 = Screen Center (Middle)
+    margin_v: int = 0
 
 
 class SingleScheduleRequest(BaseModel):
@@ -413,6 +415,8 @@ def render_story_endpoint(req: RenderStoryRequest):
             voice_id=req.voice_id,
             bg_audio_volume=req.bg_audio_volume,
             voice_volume=req.voice_volume,
+            alignment=req.alignment,
+            margin_v=req.margin_v,
         )
 
         # Replace original raw cut with story-fused version so it's ready for publishing!
@@ -512,3 +516,88 @@ def schedule_stagger_endpoint(req: StaggerScheduleRequest):
     except Exception as e:
         logger.error(f"Smart stagger failed: {e}")
         raise HTTPException(status_code=500, detail=f"Smart stagger failed: {e}")
+
+
+def _delete_clip_files(stream_name: str, clip_id: str) -> bool:
+    """Permanently delete a video clip and its story/metadata files."""
+    deleted_any = False
+    for base_dir in [LIBRARY_UNPUBLISHED, LIBRARY_PUBLISHED]:
+        stream_dir = base_dir / stream_name
+        if not stream_dir.exists():
+            continue
+
+        targets = [
+            stream_dir / f"{clip_id}.mp4",
+            stream_dir / f"{clip_id}_story.mp4",
+            stream_dir / f"{clip_id}.json",
+            stream_dir / f"{clip_id}.ass",
+        ]
+
+        for p in stream_dir.glob(f".tmp_{clip_id}*"):
+            if p.is_dir():
+                shutil.rmtree(p, ignore_errors=True)
+                deleted_any = True
+            elif p.is_file():
+                p.unlink(missing_ok=True)
+                deleted_any = True
+
+        for t in targets:
+            if t.exists():
+                t.unlink(missing_ok=True)
+                deleted_any = True
+
+        # Clean up stream folder if no more video clips remain
+        remaining = list(stream_dir.glob("*_clip_*.mp4"))
+        if not remaining and stream_dir.exists():
+            shutil.rmtree(stream_dir, ignore_errors=True)
+
+    return deleted_any
+
+
+def _delete_stream_folder(stream_name: str) -> bool:
+    """Permanently delete an entire stream folder and all its clips."""
+    deleted_any = False
+    for base_dir in [LIBRARY_UNPUBLISHED, LIBRARY_PUBLISHED]:
+        stream_dir = base_dir / stream_name
+        if stream_dir.exists():
+            shutil.rmtree(stream_dir, ignore_errors=True)
+            deleted_any = True
+    return deleted_any
+
+
+@app.delete("/api/clips/{stream_name}/{clip_id}")
+def delete_clip_endpoint(stream_name: str, clip_id: str):
+    """
+    Permanently delete a video clip (raw cut, story fusion, and metadata).
+    """
+    success = _delete_clip_files(stream_name, clip_id)
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Clip '{clip_id}' not found in stream '{stream_name}'."
+        )
+    return {
+        "status": "success",
+        "message": f"Successfully deleted clip '{clip_id}'",
+        "stream_name": stream_name,
+        "clip_id": clip_id,
+    }
+
+
+@app.delete("/api/streams/{stream_name}")
+def delete_stream_endpoint(stream_name: str):
+    """
+    Permanently delete an entire stream folder and all of its clips.
+    """
+    success = _delete_stream_folder(stream_name)
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Stream '{stream_name}' not found."
+        )
+    return {
+        "status": "success",
+        "message": f"Successfully deleted stream '{stream_name}' and all associated clips.",
+        "stream_name": stream_name,
+    }
+

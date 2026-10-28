@@ -346,18 +346,21 @@
           </div>
         </div>
 
-        <!-- Live Pop-Karaoke Subtitle Simulator Preview -->
+        <!-- Live Pop-Karaoke Subtitle Simulator Preview (Centered) -->
         <div class="p-3.5 rounded-2xl bg-canvas border border-borderLight space-y-1.5">
           <div class="flex items-center justify-between">
             <span class="text-[11px] font-bold text-slate-300 flex items-center space-x-1.5">
               <i data-lucide="sparkles" class="w-3.5 h-3.5 text-yellow-400"></i>
               <span>Live Kinetic Karaoke Subtitle Preview</span>
             </span>
-            <span class="text-[10px] font-mono text-slate-500">Alignment: Bottom Center (MarginV: 190)</span>
+            <span class="text-[10px] font-mono font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Alignment: Screen Center (Middle)</span>
           </div>
-          <div id="karaoke-preview-box" class="h-14 bg-black/90 rounded-xl border border-slate-800 flex items-center justify-center px-4 text-center">
-            <span class="font-display font-black text-sm tracking-wide text-white" id="karaoke-sample-text">
-              <span class="pop-word active">I</span> <span class="pop-word">FOUND</span> <span class="pop-word">A</span> <span class="pop-word">SECRET</span> <span class="pop-word">ROOM</span>
+          <div id="karaoke-preview-box" class="h-16 bg-black/90 rounded-xl border border-slate-800 flex items-center justify-center px-4 text-center relative overflow-hidden">
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+              <div class="w-full border-t border-dashed border-slate-600"></div>
+            </div>
+            <span class="font-display font-black text-sm sm:text-base tracking-wide text-white relative z-10" id="karaoke-sample-text">
+              <span class="pop-word active">I</span> <span class="pop-word">FOUND</span> <span class="pop-word">A</span> <span class="pop-word">SECRET</span>
             </span>
           </div>
         </div>
@@ -630,6 +633,16 @@
           <source id="video-source" src="" type="video/mp4">
         </video>
       </div>
+
+      <div class="w-full mt-3 pt-3 border-t border-borderLight flex items-center justify-between gap-2">
+        <button id="modal-delete-btn" onclick="deleteCurrentModalVideo()" class="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/25 transition-all flex items-center gap-1.5 cursor-pointer">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          <span>Delete Video</span>
+        </button>
+        <button onclick="closePlayerModal()" class="px-4 py-1.5 rounded-xl text-xs bg-elevated hover:bg-slate-700 text-slate-300 font-medium transition cursor-pointer">
+          Close
+        </button>
+      </div>
     </div>
   </div>
 
@@ -896,13 +909,17 @@
             </div>
           </div>
 
-          <div class="flex items-center space-x-2.5" onclick="event.stopPropagation()">
+          <div class="flex items-center space-x-2" onclick="event.stopPropagation()">
             ${currentSection === 'unpublished' ? `
               <button onclick="openStaggerModal('${stream.stream_name}')" class="px-3.5 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs font-bold transition flex items-center space-x-1.5 shadow-sm">
                 <i data-lucide="zap" class="w-3.5 h-3.5 fill-current"></i>
                 <span>Smart Stagger (7-Day Batch)</span>
               </button>
             ` : ''}
+            <button onclick="deleteEntireStream('${stream.stream_name}')" class="px-2.5 py-1.5 rounded-xl bg-elevated hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-borderLight hover:border-rose-500/30 text-xs font-bold transition flex items-center space-x-1 cursor-pointer" title="Delete entire stream and all clips">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">Delete Stream</span>
+            </button>
             <i data-lucide="chevron-down" id="chev-folder-body-${index}" class="w-5 h-5 text-slate-400 transition-transform duration-200"></i>
           </div>
         `;
@@ -941,11 +958,17 @@
                 #${String(clip.clip_index || 1).padStart(3, '0')}
               </div>
 
-              <div class="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-lg text-[10px] font-bold backdrop-blur-md ${hasStory ? 'bg-purple-900/80 text-purple-200 border border-purple-500/40' : 'bg-black/70 text-slate-400 border border-white/10'}">
-                ${hasStory ? '🎙️ Story Short' : 'Raw Video'}
+              <div class="absolute top-2.5 right-2.5 flex items-center space-x-1">
+                <button onclick="event.stopPropagation(); deleteClip('${stream.stream_name}', '${clip.clip_id}')" class="p-1 rounded-lg bg-black/80 hover:bg-rose-600 text-slate-400 hover:text-white border border-white/15 transition cursor-pointer z-10" title="Delete Unwanted Video">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
               </div>
 
-              <div class="absolute bottom-2.5 right-2.5 px-2 py-0.5 rounded-lg text-[10px] font-mono bg-black/80 text-slate-300 border border-white/10">
+              <div class="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-lg text-[9px] font-bold backdrop-blur-md ${hasStory ? 'bg-purple-900/80 text-purple-200 border border-purple-500/40' : 'bg-black/70 text-slate-400 border border-white/10'}">
+                ${hasStory ? '🎙️ Story' : 'Raw Video'}
+              </div>
+
+              <div class="absolute bottom-2.5 right-2.5 px-2 py-0.5 rounded-lg text-[9px] font-mono bg-black/80 text-slate-300 border border-white/10">
                 02:00
               </div>
             </div>
@@ -968,15 +991,25 @@
                     <i data-lucide="mic" class="w-3 h-3"></i>
                     <span>${hasStory ? 'Edit Story Script' : 'Add Viral Story'}</span>
                   </button>
-                  <button onclick="openScheduleModal('${stream.stream_name}', '${clip.clip_id}', '${(clip.story_headline || '').replace(/'/g, "\\'")}')" class="w-full py-1.5 rounded-xl bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 text-[10px] font-bold transition flex items-center justify-center space-x-1 shadow-sm">
-                    <i data-lucide="calendar" class="w-3 h-3"></i>
-                    <span>Schedule to YT</span>
-                  </button>
+                  <div class="flex items-center space-x-1.5">
+                    <button onclick="openScheduleModal('${stream.stream_name}', '${clip.clip_id}', '${(clip.story_headline || '').replace(/'/g, "\\'")}')" class="flex-1 py-1.5 rounded-xl bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 text-[10px] font-bold transition flex items-center justify-center space-x-1 shadow-sm" title="Schedule to YouTube">
+                      <i data-lucide="calendar" class="w-3 h-3"></i>
+                      <span>Schedule</span>
+                    </button>
+                    <button onclick="deleteClip('${stream.stream_name}', '${clip.clip_id}')" class="py-1.5 px-2 rounded-xl bg-elevated hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-borderLight hover:border-rose-500/30 text-[10px] font-bold transition flex items-center justify-center cursor-pointer" title="Delete Unwanted Video">
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
                 ` : `
-                  <a href="${clip.youtube_url || '#'}" target="_blank" class="w-full py-1.5 rounded-xl bg-elevated hover:bg-red-600 text-slate-300 hover:text-white text-[10px] font-bold transition flex items-center justify-center space-x-1 border border-borderLight">
-                    <i data-lucide="external-link" class="w-3 h-3"></i>
-                    <span>Open YouTube</span>
-                  </a>
+                  <div class="flex items-center space-x-1.5">
+                    <a href="${clip.youtube_url || '#'}" target="_blank" class="flex-1 py-1.5 rounded-xl bg-elevated hover:bg-red-600 text-slate-300 hover:text-white text-[10px] font-bold transition flex items-center justify-center space-x-1 border border-borderLight">
+                      <i data-lucide="external-link" class="w-3 h-3"></i>
+                      <span>Open YT</span>
+                    </a>
+                    <button onclick="deleteClip('${stream.stream_name}', '${clip.clip_id}')" class="py-1.5 px-2 rounded-xl bg-elevated hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-borderLight hover:border-rose-500/30 text-[10px] font-bold transition flex items-center justify-center cursor-pointer" title="Delete Video">
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
                 `}
               </div>
             </div>
@@ -1027,7 +1060,12 @@
       }
     }
 
+    let currentModalStream = null;
+    let currentModalClipId = null;
+
     function openPlayerModal(section, streamName, clipId) {
+      currentModalStream = streamName;
+      currentModalClipId = clipId;
       const modal = document.getElementById('playerModal');
       const player = document.getElementById('studio-video-player');
       const source = document.getElementById('video-source');
@@ -1046,6 +1084,62 @@
       const player = document.getElementById('studio-video-player');
       player.pause();
       modal.classList.add('hidden');
+      currentModalStream = null;
+      currentModalClipId = null;
+    }
+
+    async function deleteClip(streamName, clipId) {
+      if (!confirm(`Are you sure you want to delete clip "${clipId}" permanently?`)) {
+        return;
+      }
+      try {
+        const res = await fetch(`/api/clips/${encodeURIComponent(streamName)}/${encodeURIComponent(clipId)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Delete failed');
+
+        showToast(`✓ Successfully deleted clip ${clipId}`, 'success');
+
+        if (currentModalClipId === clipId) {
+          closePlayerModal();
+        }
+
+        await loadStreams();
+        await loadSystemStatus();
+      } catch (err) {
+        showToast(`Delete failed: ${err.message}`, 'error');
+      }
+    }
+
+    async function deleteEntireStream(streamName) {
+      if (!confirm(`Are you sure you want to permanently delete the entire stream "${streamName}" and all of its video clips?`)) {
+        return;
+      }
+      try {
+        const res = await fetch(`/api/streams/${encodeURIComponent(streamName)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Delete failed');
+
+        showToast(`✓ Deleted stream ${streamName} and its clips`, 'success');
+
+        if (currentModalStream === streamName) {
+          closePlayerModal();
+        }
+
+        await loadStreams();
+        await loadSystemStatus();
+      } catch (err) {
+        showToast(`Delete failed: ${err.message}`, 'error');
+      }
+    }
+
+    function deleteCurrentModalVideo() {
+      if (currentModalStream && currentModalClipId) {
+        deleteClip(currentModalStream, currentModalClipId);
+      }
     }
 
     // 1-Click Load Demo Stream
