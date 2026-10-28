@@ -73,6 +73,11 @@ jobs_lock = {}
 
 
 # Pydantic Schemas
+class VoiceSampleRequest(BaseModel):
+    voice_id: str = "en-US-ChristopherNeural"
+    sample_text: str = "This is a preview of the neural voiceover for your viral short."
+
+
 class SliceStreamRequest(BaseModel):
     source_type: str = "url"  # "url" or "local_file"
     url: Optional[str] = None
@@ -337,6 +342,41 @@ def stream_clip_video(section: str, stream_name: str, clip_id: str, request: Req
 def get_voices():
     """Return available Edge-TTS neural voices."""
     return list(VOICE_PRESETS.values())
+
+
+@app.post("/api/story/sample-voice")
+def sample_voice_endpoint(req: VoiceSampleRequest):
+    """Synthesize a quick 3-second audio preview of a chosen voice."""
+    sample_path = Path("/tmp") / f"voice_sample_{int(time.time())}.mp3"
+    try:
+        narrator.synthesize_voice(
+            text=req.sample_text,
+            voice_id=req.voice_id,
+            output_path=sample_path,
+        )
+        return FileResponse(str(sample_path), media_type="audio/mpeg")
+    except Exception as e:
+        logger.error(f"Voice sampling failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Voice preview failed: {e}")
+
+
+@app.post("/api/streams/load-demo")
+def load_demo_endpoint():
+    """Load or generate demo stream clips into Unpublished Vault for immediate testing."""
+    demo_src = BASE_DIR / "demo_podcast.mp4"
+    if not demo_src.exists():
+        raise HTTPException(status_code=404, detail="demo_podcast.mp4 not found on host.")
+
+    try:
+        clips = slicer.slice_stream_to_shorts(
+            video_path=demo_src,
+            segment_duration=12.0,
+            library_dir=LIBRARY_UNPUBLISHED,
+        )
+        return {"status": "success", "clips_count": len(clips)}
+    except Exception as e:
+        logger.error(f"Load demo failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load demo clips: {e}")
 
 
 @app.post("/api/story/generate")
