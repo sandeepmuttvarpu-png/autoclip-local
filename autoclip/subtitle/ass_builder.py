@@ -16,15 +16,17 @@ class AssSubtitleBuilder:
     def __init__(
         self,
         font_name: str = "Montserrat ExtraBold",
-        font_size: int = 75,
-        margin_v: int = 190,
+        font_size: int = 80,
+        alignment: int = 5,  # 5 = Middle-Center (dead center of screen for 9:16 Shorts)
+        margin_v: int = 0,   # Centered on vertical axis
         highlight_color: str = "&H0000FFFF&",  # Yellow in ASS BGR format
         primary_color: str = "&H00FFFFFF&",    # Pure White
         outline_color: str = "&H00000000&",    # Pure Black
-        max_words_per_line: int = 4,
+        max_words_per_line: int = 3,           # 3 words per line is punchy for center display
     ):
         self.font_name = font_name
         self.font_size = font_size
+        self.alignment = alignment
         self.margin_v = margin_v
         self.highlight_color = highlight_color
         self.primary_color = primary_color
@@ -106,7 +108,7 @@ YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{self.font_name},{self.font_size},{self.primary_color},&H000000FF&,{self.outline_color},&H80000000&,-1,0,0,0,100,100,2,0,1,5,3,2,60,60,{self.margin_v},1
+Style: Default,{self.font_name},{self.font_size},{self.primary_color},&H000000FF&,{self.outline_color},&H80000000&,-1,0,0,0,100,100,2,0,1,6,3,{self.alignment},60,60,{self.margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

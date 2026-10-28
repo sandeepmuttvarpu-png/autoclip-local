@@ -226,12 +226,17 @@ class StoryNarrator:
         duration: float,
         output_ass_path: Path,
         headline: Optional[str] = None,
+        alignment: int = 5,
+        margin_v: int = 0,
     ) -> Path:
         """
         Builds kinetic pop-karaoke ASS subtitles, optionally injecting
         a viral 3.5s opening hook title banner at the top/center.
         """
-        builder = AssSubtitleBuilder()
+        builder = AssSubtitleBuilder(
+            alignment=alignment,
+            margin_v=margin_v,
+        )
         builder.build_ass(
             words=words,
             clip_start=0.0,
@@ -274,6 +279,8 @@ class StoryNarrator:
         voice_id: str = "en-US-ChristopherNeural",
         bg_audio_volume: float = 0.12,  # Duck background game audio to 12%
         voice_volume: float = 1.0,
+        alignment: int = 5,  # 5 = Screen Center (Middle)
+        margin_v: int = 0,
         progress_callback=None,
     ) -> StoryRenderResult:
         """
@@ -323,6 +330,8 @@ class StoryNarrator:
             duration=voice_duration,
             output_ass_path=ass_path,
             headline=headline,
+            alignment=alignment,
+            margin_v=margin_v,
         )
 
         # Assemble and render via FFmpeg
