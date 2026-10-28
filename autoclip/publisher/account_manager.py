@@ -159,6 +159,19 @@ class AccountManager:
             created_at=data.get("created_at", 0.0),
         )
 
+    def delete_account(self, account_id: str) -> bool:
+        """Remove an account configuration and associated credentials."""
+        account_id = account_id.strip().lower().replace(" ", "_")
+        acc_file = self.accounts_dir / f"account_{account_id}.json"
+        secret_file = self.accounts_dir / f"{account_id}_client_secret.json"
+        token_file = self.accounts_dir / f"{account_id}_token.json"
+        removed = False
+        for f in (acc_file, secret_file, token_file):
+            if f.exists():
+                f.unlink()
+                removed = True
+        return removed
+
     def get_publisher_for_account(self, account_id: str) -> YouTubePublisher:
         """Instantiate a YouTubePublisher bound to a specific channel's credentials."""
         acc = self.get_account(account_id)

@@ -84,7 +84,7 @@
 
       <button onclick="openModal('accountsModal')" class="flex items-center space-x-2 px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-gray-200 text-xs font-medium rounded-lg transition">
         <i data-lucide="youtube" class="w-4 h-4 text-red-500"></i>
-        <span>YT Channels (<span id="accounts-count">3</span>)</span>
+        <span>YT Channels: <span id="accounts-count" class="font-bold text-amber-400">0 Connected</span></span>
       </button>
 
       <button onclick="loadStreams()" class="p-2 hover:bg-dark-800 text-gray-400 hover:text-white rounded-lg transition" title="Refresh Vault">
@@ -140,10 +140,10 @@
       <div class="bg-dark-850 p-4 rounded-xl border border-dark-800 flex items-center justify-between">
         <div>
           <p class="text-xs font-medium text-gray-400">Connected Accounts</p>
-          <h3 class="text-2xl font-bold text-white mt-1" id="stat-accounts">3</h3>
-          <p class="text-[11px] text-red-400 mt-1 flex items-center space-x-1">
-            <i data-lucide="youtube" class="w-3 h-3"></i>
-            <span>Multi-channel rotation</span>
+          <h3 class="text-2xl font-bold text-white mt-1" id="stat-accounts">0 <span class="text-xs text-gray-500 font-normal">/ 3 slots</span></h3>
+          <p class="text-[11px] mt-1 flex items-center space-x-1" id="stat-accounts-status">
+            <i data-lucide="alert-circle" class="w-3 h-3 text-amber-400"></i>
+            <span class="text-amber-400">0 / 3 Authenticated</span>
           </p>
         </div>
         <div class="w-10 h-10 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center">
@@ -479,7 +479,7 @@
 
   <!-- ACCOUNTS MANAGEMENT MODAL -->
   <div id="accountsModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-dark-850 border border-dark-700 rounded-2xl w-full max-w-xl p-6 shadow-2xl relative">
+    <div class="bg-dark-850 border border-dark-700 rounded-2xl w-full max-w-xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
       <button onclick="closeModal('accountsModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
@@ -489,16 +489,64 @@
           <i data-lucide="youtube" class="w-5 h-5"></i>
         </div>
         <div>
-          <h3 class="text-lg font-bold text-white">Connected YouTube Channels</h3>
+          <h3 class="text-lg font-bold text-white">YouTube Channels & OAuth Credentials</h3>
           <p class="text-xs text-gray-400">Manage independent credentials for up to 3+ YouTube channels</p>
         </div>
       </div>
 
-      <div class="space-y-3" id="accounts-list-container">
+      <!-- Explanatory Banner -->
+      <div class="p-3 mb-4 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-xs text-indigo-300 space-y-1">
+        <div class="flex items-center space-x-1.5 font-semibold text-white">
+          <i data-lucide="info" class="w-4 h-4 text-indigo-400"></i>
+          <span>Multi-Channel Slots</span>
+        </div>
+        <p class="text-[11px] text-gray-300 leading-relaxed">
+          The system reserves 3 channel slots so you can rotate 100+ videos across multiple channels in 1 click. Unlinked slots run in safe <strong>queue/simulation mode</strong> so you can test scheduling right away. Connect your real Google OAuth <code class="bg-dark-900 px-1 rounded text-yellow-300">client_secret.json</code> below to enable live uploads.
+        </p>
+      </div>
+
+      <!-- Accounts List -->
+      <div class="space-y-3 mb-5" id="accounts-list-container">
         <!-- Rendered dynamically -->
       </div>
 
-      <div class="mt-4 pt-4 border-t border-dark-700 flex justify-end">
+      <!-- Add / Connect New Channel Form -->
+      <div class="p-4 rounded-xl bg-dark-900 border border-dark-700 space-y-3">
+        <h4 class="text-xs font-bold text-gray-200 flex items-center space-x-1.5">
+          <i data-lucide="plus" class="w-3.5 h-3.5 text-indigo-400"></i>
+          <span>Connect New YouTube Channel</span>
+        </h4>
+
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <label class="block text-gray-400 mb-1">Slot ID (e.g. channel_1, gaming)</label>
+            <input type="text" id="new-acc-id" placeholder="my_channel" class="w-full bg-dark-850 border border-dark-700 rounded-lg px-3 py-1.5 text-xs text-white">
+          </div>
+          <div>
+            <label class="block text-gray-400 mb-1">Display Name</label>
+            <input type="text" id="new-acc-name" placeholder="My Main Shorts (@Channel)" class="w-full bg-dark-850 border border-dark-700 rounded-lg px-3 py-1.5 text-xs text-white">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Google OAuth client_secret.json (Paste JSON content)</label>
+          <textarea id="new-acc-secret" rows="3" placeholder='{"installed": {"client_id": "...", "client_secret": "..."}}' class="w-full bg-dark-850 border border-dark-700 rounded-lg px-3 py-2 text-[11px] font-mono text-gray-300 leading-tight"></textarea>
+          <p class="text-[10px] text-gray-500 mt-1">Get this from Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID (Desktop App)</p>
+        </div>
+
+        <div class="flex justify-end">
+          <button onclick="saveNewAccount()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1">
+            <i data-lucide="save" class="w-3.5 h-3.5"></i>
+            <span>Save Channel</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="mt-4 pt-4 border-t border-dark-700 flex justify-between items-center">
+        <button onclick="clearDemoSlots()" class="text-xs text-red-400 hover:text-red-300 transition flex items-center space-x-1">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          <span>Clear All Demo Slots</span>
+        </button>
         <button onclick="closeModal('accountsModal')" class="px-4 py-2 bg-dark-800 hover:bg-dark-700 text-gray-300 rounded-lg text-xs font-medium">Close</button>
       </div>
     </div>
@@ -561,11 +609,16 @@
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
+        const authCount = data.accounts_count || 0;
+        const totalSlots = data.total_account_slots || 0;
         document.getElementById('stat-unpub-clips').innerText = data.unpublished_clips_count;
         document.getElementById('stat-pub-clips').innerText = data.published_clips_count;
         document.getElementById('stat-streams').innerText = data.unpublished_streams_count + data.published_streams_count;
-        document.getElementById('stat-accounts').innerText = data.accounts_count;
-        document.getElementById('accounts-count').innerText = data.accounts_count;
+        document.getElementById('stat-accounts').innerHTML = `${authCount} <span class="text-xs text-gray-500 font-normal">/ ${totalSlots} Slots</span>`;
+        document.getElementById('stat-accounts-status').innerHTML = authCount > 0 
+          ? '<i data-lucide="check-circle" class="w-3 h-3 text-emerald-400"></i><span class="text-emerald-400">' + authCount + ' Channels Active</span>' 
+          : '<i data-lucide="alert-circle" class="w-3 h-3 text-amber-400"></i><span class="text-amber-400">0 / ' + totalSlots + ' Authenticated</span>';
+        document.getElementById('accounts-count').innerText = `${authCount} / ${totalSlots} Linked`;
         if (data.gpu_name) {
           document.getElementById('gpu-badge').innerText = data.gpu_name;
         }
@@ -585,13 +638,16 @@
         accountsData.forEach(acc => {
           const opt = document.createElement('option');
           opt.value = acc.account_id;
-          opt.innerText = acc.account_name;
+          opt.innerText = `${acc.account_name} ${acc.is_authenticated ? '(Live)' : '(Simulated)'}`;
           select.appendChild(opt);
         });
 
         // Populate accounts modal list
         const listContainer = document.getElementById('accounts-list-container');
         listContainer.innerHTML = '';
+        if (accountsData.length === 0) {
+          listContainer.innerHTML = '<div class="p-4 rounded-xl bg-dark-900 border border-dark-800 text-center text-xs text-gray-400">No channels configured. Connect a channel below to get started.</div>';
+        }
         accountsData.forEach(acc => {
           const item = document.createElement('div');
           item.className = "p-3 rounded-xl bg-dark-900 border border-dark-700 flex items-center justify-between";
@@ -599,14 +655,18 @@
             <div>
               <div class="flex items-center space-x-2">
                 <span class="font-bold text-xs text-white">${acc.account_name}</span>
-                <span class="text-[10px] px-1.5 py-0.5 rounded font-mono ${acc.is_authenticated ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}">
-                  ${acc.is_authenticated ? 'Authenticated' : 'OAuth Ready'}
+                <span class="text-[10px] px-1.5 py-0.5 rounded font-mono ${acc.is_authenticated ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}">
+                  ${acc.is_authenticated ? '✓ Authenticated' : '⚠️ Unlinked Slot'}
                 </span>
               </div>
-              <p class="text-[11px] text-gray-500 font-mono mt-0.5">ID: ${acc.account_id}</p>
+              <p class="text-[11px] text-gray-400 mt-0.5">
+                ${acc.is_authenticated ? 'Direct YouTube upload active' : 'Simulated / Safe Queue mode until OAuth JSON added'}
+              </p>
             </div>
-            <div class="text-[11px] text-gray-400">
-              <span class="px-2 py-1 rounded bg-dark-800 border border-dark-700">Slot Active</span>
+            <div class="flex items-center space-x-2">
+              <button onclick="deleteAccountSlot('${acc.account_id}')" class="p-1.5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 rounded-lg transition" title="Delete Slot">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
             </div>
           `;
           listContainer.appendChild(item);
@@ -627,6 +687,59 @@
       } catch (e) {
         console.error('Failed to load accounts', e);
       }
+    }
+
+    async function saveNewAccount() {
+      const id = document.getElementById('new-acc-id').value.trim();
+      const name = document.getElementById('new-acc-name').value.trim();
+      const secret = document.getElementById('new-acc-secret').value.trim();
+
+      if (!id || !name) {
+        alert('Please provide an Account Slot ID and Display Name.');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/accounts/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            account_id: id,
+            account_name: name,
+            client_secret_json: secret || null,
+          }),
+        });
+        if (!res.ok) throw new Error('Failed to register account');
+        alert('✓ Channel slot saved successfully!');
+        document.getElementById('new-acc-id').value = '';
+        document.getElementById('new-acc-name').value = '';
+        document.getElementById('new-acc-secret').value = '';
+        await loadAccounts();
+        await loadSystemStatus();
+      } catch (e) {
+        alert('Error saving channel: ' + e.message);
+      }
+    }
+
+    async function deleteAccountSlot(accountId) {
+      if (!confirm(`Are you sure you want to remove account slot '${accountId}'?`)) return;
+      try {
+        const res = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete account');
+        await loadAccounts();
+        await loadSystemStatus();
+      } catch (e) {
+        alert('Error deleting account: ' + e.message);
+      }
+    }
+
+    async function clearDemoSlots() {
+      if (!confirm('Clear all demo placeholder slots?')) return;
+      for (const acc of accountsData) {
+        await fetch(`/api/accounts/${acc.account_id}`, { method: 'DELETE' });
+      }
+      await loadAccounts();
+      await loadSystemStatus();
     }
 
     async function loadStreams() {

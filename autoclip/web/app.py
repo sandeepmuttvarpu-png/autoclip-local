@@ -205,6 +205,7 @@ def get_system_status():
             except Exception:
                 pass
 
+    auth_accounts = [a for a in accounts if a.is_authenticated]
     return {
         "status": "online",
         "cuda_available": cuda_avail,
@@ -214,7 +215,8 @@ def get_system_status():
         "published_clips_count": pub_count,
         "unpublished_streams_count": unpub_streams,
         "published_streams_count": pub_streams,
-        "accounts_count": len(accounts),
+        "accounts_count": len(auth_accounts),
+        "total_account_slots": len(accounts),
     }
 
 
@@ -410,6 +412,15 @@ def register_account_endpoint(req: RegisterAccountRequest):
         token_json=req.token_json,
     )
     return acc.to_dict()
+
+
+@app.delete("/api/accounts/{account_id}")
+def delete_account_endpoint(account_id: str):
+    """Delete an account slot and credentials."""
+    removed = account_mgr.delete_account(account_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"Account '{account_id}' not found.")
+    return {"status": "success", "account_id": account_id}
 
 
 @app.post("/api/schedule/single")
