@@ -135,20 +135,20 @@ class AudioTranscriber:
             )
         except Exception as e:
             logger.warning(
-                f"Failed to load '{self.model_size}' on {self.device}: {e}. Falling back to '{self.fallback_model}'..."
+                f"Failed to load '{self.model_size}' on {self.device}: {e}. Retrying '{self.model_size}' on CPU (int8)..."
             )
             try:
-                self._model = WhisperModel(
-                    self.fallback_model,
-                    device=self.device,
-                    compute_type=self.compute_type,
-                )
-            except Exception as e_inner:
-                logger.warning(
-                    f"CUDA fallback failed: {e_inner}. Loading '{self.fallback_model}' on CPU (int8)..."
-                )
                 self.device = "cpu"
                 self.compute_type = "int8"
+                self._model = WhisperModel(
+                    self.model_size,
+                    device="cpu",
+                    compute_type="int8",
+                )
+            except Exception as e_cpu:
+                logger.warning(
+                    f"CPU fallback for '{self.model_size}' failed: {e_cpu}. Loading '{self.fallback_model}'..."
+                )
                 self._model = WhisperModel(
                     self.fallback_model,
                     device="cpu",
