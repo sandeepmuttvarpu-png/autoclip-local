@@ -472,25 +472,38 @@ def studio_cmd(host, port, reload):
 @click.option("--duration", default=120.0, type=float, help="Segment duration in seconds (default: 120s)")
 @click.option("--max-clips", default=None, type=int, help="Max clips to extract (default: all)")
 @click.option("--output-dir", default="library/unpublished", help="Target output library folder")
-def slice_cmd(source, duration, max_clips, output_dir):
+@click.option("--direct/--download", default=True, help="Slice directly over HTTP streaming without downloading full VOD to disk")
+def slice_cmd(source, duration, max_clips, output_dir, direct):
     """Slice a 1-to-5 hour stream (URL or local path) into 2-minute 9:16 vertical shorts."""
     from autoclip.stream.slicer import StreamSlicer
 
     slicer = StreamSlicer(nvenc_enabled=True)
-    if source.startswith("http://") or source.startswith("https://"):
+    is_url = source.startswith("http://") or source.startswith("https://")
+
+    if is_url and not direct:
         console.print(f"[bold cyan]Downloading live stream via yt-dlp:[/bold cyan] {source}")
         video_file = slicer.download_stream(source, Path("raw_streams"))
+        source_target = str(video_file)
+        is_url = False
     else:
-        video_file = Path(source).resolve()
+        source_target = source
 
-    console.print(f"[bold green]Slicing '{video_file.name}' into 9:16 vertical shorts ({duration:.0f}s each)...[/bold green]")
+    if is_url:
+        console.print(f"[bold green]Directly slicing online stream via HTTP seeking ({duration:.0f}s chunks)...[/bold green]")
+    else:
+        console.print(f"[bold green]Slicing '{Path(source_target).name}' into 9:16 vertical shorts ({duration:.0f}s each)...[/bold green]")
+
     clips = slicer.slice_stream_to_shorts(
-        video_path=video_file,
+        source=source_target,
+        is_url=is_url,
         segment_duration=duration,
         library_dir=Path(output_dir),
         max_clips=max_clips,
     )
-    console.print(f"✓ Generated [bold green]{len(clips)}[/bold green] vertical shorts in: [cyan]{output_dir}/{clips[0].stream_name}[/cyan]")
+    if clips:
+        console.print(f"✓ Generated [bold green]{len(clips)}[/bold green] vertical shorts in: [cyan]{output_dir}/{clips[0].stream_name}[/cyan]")
+    else:
+        console.print("[yellow]No clips produced. Please verify stream duration and source URL.[/yellow]")
 
 
 @main.command("fuse-story")
