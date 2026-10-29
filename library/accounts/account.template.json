@@ -1,0 +1,7 @@
+{
+  "account_id": "channel_1",
+  "account_name": "Primary Shorts Channel (@ChannelOne)",
+  "client_secret_path": "library/accounts/channel_1_client_secret.json",
+  "token_path": "library/accounts/channel_1_token.json",
+  "created_at": 1793179734.0
+}

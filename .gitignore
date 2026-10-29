@@ -21,6 +21,11 @@ library/unpublished/*
 !library/unpublished/.gitkeep
 library/published/*
 !library/published/.gitkeep
+library/accounts/account_*.json
+library/accounts/*_token.json
+library/accounts/*_secret*.json
+!library/accounts/.gitkeep
+!library/accounts/account.template.json
 *.mp4
 *.mkv
 *.wav
