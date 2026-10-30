@@ -4,13 +4,14 @@
 > **The next-generation, 100% local, GPU-accelerated video repurposing & viral shorts creation studio that slices multi-hour 4K streams in seconds without downloading 20GB files, tracks speakers via MediaPipe, ranks virality via Sandwich.cpp, and schedules releases on YouTube.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
+[![CI: Automated Tests](https://github.com/sandeepmuttvarpu-png/autoclip-local/actions/workflows/ci.yml/badge.svg)](https://github.com/sandeepmuttvarpu-png/autoclip-local/actions)
 [![CUDA: 12.0+ / 13.4](https://img.shields.io/badge/CUDA-12.0%2B%20%7C%2013.4-green.svg?style=for-the-badge&logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
 [![NVENC: 14x Realtime](https://img.shields.io/badge/NVENC-14x%20Realtime%20%E2%9A%A1-76B900.svg?style=for-the-badge&logo=nvidia)](https://developer.nvidia.com/video-encode-decode-gpu-support-matrix)
 [![Stream Slicing: Zero Download](https://img.shields.io/badge/Stream%20Slicing-Zero%2020GB%20Downloads%20%F0%9F%8D%B0-blueviolet?style=for-the-badge)](#)
 [![Loadouts: 4 Active](https://img.shields.io/badge/Loadouts-4%20Active%20Styles%20%F0%9F%8E%A8-orange?style=for-the-badge)](#)
 [![Telemetry: Real-Time SSE](https://img.shields.io/badge/Telemetry-Real--Time%20SSE%20%F0%9F%93%A1-red?style=for-the-badge)](#)
 [![Dockge: One-Click](https://img.shields.io/badge/Dockge-Stack%20Managed%20%F0%9F%90%B3-blue?style=for-the-badge)](http://localhost:5001)
-[![Tests: 26/26 PASS](https://img.shields.io/badge/Tests-26%2F26%20Passing%20%E2%9C%85-success?style=for-the-badge)](#)
+[![Tests: 32/32 PASS](https://img.shields.io/badge/Tests-32%2F32%20Passing%20%E2%9C%85-success?style=for-the-badge)](#)
 [![No Cap: Verified](https://img.shields.io/badge/Cap%3A-Zero%20%F0%9F%A7%A2-blue?style=for-the-badge)](#)
 
 ---
@@ -317,37 +318,42 @@ pytest -v
 
 ```text
 ============================= test session starts ==============================
-platform linux -- Python 3.12.3, pytest-8.4.2
-collected 26 items
+collected 32 items
 
-tests/test_addons.py::test_youtube_publish_at_formatter PASSED           [  3%]
-tests/test_addons.py::test_youtube_missing_credentials_error PASSED      [  7%]
-tests/test_addons.py::test_youtube_scheduled_upload_mock PASSED          [ 11%]
-tests/test_addons.py::test_gaming_stacked_geometry PASSED                [ 15%]
-tests/test_addons.py::test_gaming_stacked_render_end_to_end PASSED       [ 19%]
-tests/test_addons.py::test_audio_spike_detection_synthetic PASSED        [ 23%]
-tests/test_method_c_and_loadouts.py::test_job_queue_lifecycle PASSED     [ 26%]
-tests/test_method_c_and_loadouts.py::test_loadouts_manager PASSED        [ 30%]
-tests/test_method_c_and_loadouts.py::test_story_vault_parsing PASSED     [ 34%]
-tests/test_method_c_and_loadouts.py::test_api_stories_and_loadouts_endpoints PASSED [ 38%]
-tests/test_method_c_and_loadouts.py::test_api_async_slice_endpoint PASSED [ 42%]
-tests/test_smoke.py::test_reframer_aspect_ratio PASSED                   [ 46%]
-tests/test_smoke.py::test_kinetic_ass_builder PASSED                     [ 50%]
-tests/test_smoke.py::test_segmenter_json_parsing PASSED                  [ 53%]
-tests/test_smoke.py::test_end_to_end_nvenc_render PASSED                 [ 57%]
-tests/test_studio.py::test_stream_slicer PASSED                          [ 61%]
-tests/test_studio.py::test_story_generator_fallback_and_custom PASSED    [ 65%]
-tests/test_studio.py::test_story_narrator_subtitles_and_ducking PASSED   [ 69%]
-tests/test_studio.py::test_account_manager_state_transition PASSED       [ 73%]
-tests/test_studio.py::test_account_manager_smart_stagger PASSED          [ 76%]
-tests/test_studio.py::test_web_api_status_and_voices PASSED              [ 80%]
-tests/test_studio.py::test_web_api_story_generation PASSED               [ 84%]
-tests/test_studio.py::test_web_api_accounts_list PASSED                  [ 88%]
-tests/test_studio.py::test_web_api_video_streaming PASSED                [ 92%]
+tests/test_cli.py::test_cli_version PASSED                               [  3%]
+tests/test_cli.py::test_cli_help PASSED                                  [  6%]
+tests/test_cli.py::test_cli_slice_flags PASSED                           [  9%]
+tests/test_cli.py::test_cli_studio_flags PASSED                          [ 12%]
+tests/test_cli.py::test_cli_fuse_story_flags PASSED                      [ 15%]
+tests/test_cli.py::test_cli_publish_missing_args PASSED                  [ 18%]
+tests/test_addons.py::test_youtube_publish_at_formatter PASSED           [ 21%]
+tests/test_addons.py::test_youtube_missing_credentials_error PASSED      [ 25%]
+tests/test_addons.py::test_youtube_scheduled_upload_mock PASSED          [ 28%]
+tests/test_addons.py::test_gaming_stacked_geometry PASSED                [ 31%]
+tests/test_addons.py::test_gaming_stacked_render_end_to_end PASSED       [ 34%]
+tests/test_addons.py::test_audio_spike_detection_synthetic PASSED        [ 37%]
+tests/test_method_c_and_loadouts.py::test_job_queue_lifecycle PASSED     [ 40%]
+tests/test_method_c_and_loadouts.py::test_loadouts_manager PASSED        [ 43%]
+tests/test_method_c_and_loadouts.py::test_story_vault_parsing PASSED     [ 46%]
+tests/test_method_c_and_loadouts.py::test_api_stories_and_loadouts_endpoints PASSED [ 50%]
+tests/test_method_c_and_loadouts.py::test_api_async_slice_endpoint PASSED [ 53%]
+tests/test_smoke.py::test_reframer_aspect_ratio PASSED                   [ 56%]
+tests/test_smoke.py::test_kinetic_ass_builder PASSED                     [ 59%]
+tests/test_smoke.py::test_segmenter_json_parsing PASSED                  [ 62%]
+tests/test_smoke.py::test_end_to_end_nvenc_render PASSED                 [ 65%]
+tests/test_studio.py::test_stream_slicer PASSED                          [ 68%]
+tests/test_studio.py::test_story_generator_fallback_and_custom PASSED    [ 71%]
+tests/test_studio.py::test_story_narrator_subtitles_and_ducking PASSED   [ 75%]
+tests/test_studio.py::test_account_manager_state_transition PASSED       [ 78%]
+tests/test_studio.py::test_account_manager_smart_stagger PASSED          [ 81%]
+tests/test_studio.py::test_web_api_status_and_voices PASSED              [ 84%]
+tests/test_studio.py::test_web_api_story_generation PASSED               [ 87%]
+tests/test_studio.py::test_web_api_accounts_list PASSED                  [ 90%]
+tests/test_studio.py::test_web_api_video_streaming PASSED                [ 93%]
 tests/test_studio.py::test_ass_subtitle_middle_center_alignment PASSED   [ 96%]
 tests/test_studio.py::test_web_api_delete_clip_and_stream PASSED         [100%]
 
-============================= 26 passed in 24.89s ==============================
+============================= 32 passed in 26.15s ==============================
 ```
 
 ---
