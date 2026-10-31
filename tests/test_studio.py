@@ -16,7 +16,7 @@ from autoclip.stream.slicer import StreamSlicer
 from autoclip.story.generator import StoryGenerator, StoryRequest, GeneratedStory
 from autoclip.story.narrator import StoryNarrator, VOICE_PRESETS
 from autoclip.publisher.account_manager import AccountManager
-from autoclip.web.app import app
+from autoclip.web.app import app, LIBRARY_UNPUBLISHED
 from tests.test_smoke import generate_synthetic_video, probe_video_dimensions
 
 
@@ -303,7 +303,7 @@ def test_web_api_video_streaming(test_video: Path):
     client = TestClient(app)
 
     # Place a dummy clip in unpublished library
-    stream_folder = Path("library/unpublished/test_stream_api")
+    stream_folder = LIBRARY_UNPUBLISHED / "test_stream_api"
     stream_folder.mkdir(parents=True, exist_ok=True)
     clip_path = stream_folder / "test_stream_api_clip_001.mp4"
     shutil.copy(str(test_video), str(clip_path))
@@ -357,7 +357,7 @@ def test_web_api_delete_clip_and_stream(test_video: Path):
     client = TestClient(app)
 
     stream_name = "test_delete_stream"
-    stream_folder = Path(f"library/unpublished/{stream_name}")
+    stream_folder = LIBRARY_UNPUBLISHED / stream_name
     stream_folder.mkdir(parents=True, exist_ok=True)
 
     clip_1 = stream_folder / f"{stream_name}_clip_001.mp4"
