@@ -34,6 +34,16 @@ def test_cli_help(runner: CliRunner):
     assert "detect-hype" in result.output
     assert "gaming" in result.output
     assert "run" in result.output
+    assert "probe" in result.output
+
+
+def test_cli_probe_invocation(runner: CliRunner):
+    """Verify autoclip probe executes diagnostics successfully."""
+    result = runner.invoke(main, ["probe"])
+    assert result.exit_code == 0
+    assert "Hardware & Inference Diagnostics" in result.output
+    assert "Compute Device" in result.output
+    assert "NVENC Encoder" in result.output
 
 
 def test_cli_slice_flags(runner: CliRunner):
