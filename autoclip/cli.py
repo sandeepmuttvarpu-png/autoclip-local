@@ -543,5 +543,44 @@ def fuse_story_cmd(clip_path, category, voice, headline, story, out):
     console.print(f"✓ Final short rendered: [bold green]{res.final_video_path}[/bold green] ({res.duration:.1f}s)")
 
 
+@main.command("probe")
+def probe_cmd():
+    """Probe hardware acceleration, NVENC, local LLM, and storage readiness."""
+    import urllib.request
+
+    cfg = AutoClipConfig()
+    cfg.detect_environment()
+    print_banner(cfg)
+
+    console.print("\n[bold cyan]Hardware & Inference Diagnostics:[/bold cyan]")
+
+    # 1. GPU / CUDA
+    cuda_status = "[bold green]Available (CUDA active)[/bold green]" if cfg.hardware.device == "cuda" else "[yellow]CPU Mode (CUDA not detected)[/yellow]"
+    console.print(f"  • Compute Device    : {cuda_status}")
+
+    # 2. NVENC
+    nvenc_status = "[bold green]Supported (h264_nvenc ready)[/bold green]" if cfg.hardware.has_nvenc else "[yellow]Unavailable (using CPU libx264)[/yellow]"
+    console.print(f"  • NVENC Encoder     : {nvenc_status}")
+
+    # 3. Local LLM Server Check
+    llm_reachable = False
+    try:
+        req = urllib.request.Request(f"{cfg.llm_url.rstrip('/')}/models", headers={"Authorization": f"Bearer {cfg.llm_api_key}"})
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            if resp.status == 200:
+                llm_reachable = True
+    except Exception:
+        llm_reachable = False
+
+    llm_badge = f"[bold green]Connected ({cfg.llm_url})[/bold green]" if llm_reachable else f"[yellow]Offline at {cfg.llm_url} (run sandwich serve)[/yellow]"
+    console.print(f"  • Local LLM Server  : {llm_badge}")
+
+    # 4. Storage Directories
+    for d in ["library", "raw_streams", "stories"]:
+        p = Path(d)
+        p.mkdir(parents=True, exist_ok=True)
+        console.print(f"  • Directory '{d}' : [bold green]Ready ({p.resolve()})[/bold green]")
+
+
 if __name__ == "__main__":
     main()
