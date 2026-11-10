@@ -544,12 +544,43 @@ def fuse_story_cmd(clip_path, category, voice, headline, story, out):
 
 
 @main.command("probe")
-def probe_cmd():
+@click.option("--json-output", "--json", "json_output", is_flag=True, default=False, help="Output diagnostics in machine-readable JSON format.")
+def probe_cmd(json_output: bool = False):
     """Probe hardware acceleration, NVENC, local LLM, and storage readiness."""
     import urllib.request
+    import json
 
     cfg = AutoClipConfig()
     cfg.detect_environment()
+
+    # Check local LLM reachability
+    llm_reachable = False
+    try:
+        req = urllib.request.Request(f"{cfg.llm_url.rstrip('/')}/models", headers={"Authorization": f"Bearer {cfg.llm_api_key}"})
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            if resp.status == 200:
+                llm_reachable = True
+    except Exception:
+        llm_reachable = False
+
+    # Check/create directories
+    dir_status = {}
+    for d in ["library", "raw_streams", "stories"]:
+        p = Path(d)
+        p.mkdir(parents=True, exist_ok=True)
+        dir_status[d] = str(p.resolve())
+
+    if json_output:
+        payload = {
+            "compute_device": cfg.hardware.device,
+            "has_nvenc": cfg.hardware.has_nvenc,
+            "llm_reachable": llm_reachable,
+            "llm_url": cfg.llm_url,
+            "directories": dir_status,
+        }
+        click.echo(json.dumps(payload, indent=2))
+        return
+
     print_banner(cfg)
 
     console.print("\n[bold cyan]Hardware & Inference Diagnostics:[/bold cyan]")
@@ -563,23 +594,12 @@ def probe_cmd():
     console.print(f"  • NVENC Encoder     : {nvenc_status}")
 
     # 3. Local LLM Server Check
-    llm_reachable = False
-    try:
-        req = urllib.request.Request(f"{cfg.llm_url.rstrip('/')}/models", headers={"Authorization": f"Bearer {cfg.llm_api_key}"})
-        with urllib.request.urlopen(req, timeout=2) as resp:
-            if resp.status == 200:
-                llm_reachable = True
-    except Exception:
-        llm_reachable = False
-
     llm_badge = f"[bold green]Connected ({cfg.llm_url})[/bold green]" if llm_reachable else f"[yellow]Offline at {cfg.llm_url} (run sandwich serve)[/yellow]"
     console.print(f"  • Local LLM Server  : {llm_badge}")
 
     # 4. Storage Directories
-    for d in ["library", "raw_streams", "stories"]:
-        p = Path(d)
-        p.mkdir(parents=True, exist_ok=True)
-        console.print(f"  • Directory '{d}' : [bold green]Ready ({p.resolve()})[/bold green]")
+    for d, resolved in dir_status.items():
+        console.print(f"  • Directory '{d}' : [bold green]Ready ({resolved})[/bold green]")
 
 
 if __name__ == "__main__":

@@ -46,6 +46,18 @@ def test_cli_probe_invocation(runner: CliRunner):
     assert "NVENC Encoder" in result.output
 
 
+def test_cli_probe_json_output(runner: CliRunner):
+    """Verify autoclip probe --json outputs valid JSON payload."""
+    import json
+    result = runner.invoke(main, ["probe", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert "compute_device" in data
+    assert "has_nvenc" in data
+    assert "llm_reachable" in data
+    assert "directories" in data
+
+
 def test_cli_slice_flags(runner: CliRunner):
     """Verify autoclip slice options and defaults."""
     result = runner.invoke(main, ["slice", "--help"])
